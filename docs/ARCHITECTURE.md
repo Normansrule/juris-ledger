@@ -6,7 +6,7 @@
 flowchart TB
     E["experiments.py / sim.py<br/>hypotheses, synthetic economy, attackers"]
     U["legal.py · contracts.py · fraud.py · stats.py · privacy.py<br/>read-only analysis anyone can run"]
-    N["consensus.py<br/>validator nodes, voting, accountability"]
+    N["consensus.py · bft.py<br/>validator nodes, voting, accountability, hostile-network model"]
     C["chain.py<br/>block rules, commit certificates, audit, light-client proofs"]
     S["state.py<br/>deterministic state machine: all transaction rules"]
     B["tx.py · block.py · crypto.py<br/>signatures, hashes, Merkle trees, canonical encoding"]

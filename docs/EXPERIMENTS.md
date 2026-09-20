@@ -48,6 +48,16 @@ Fourteen claims, lettered in the source: (a) history tampering, (b) forged payme
 
 **Most informative result.** With two of four validators silent, the chain halts and nothing is finalised. The design prefers stopping to guessing.
 
+## 3b. `asynchrony` — consensus on a hostile network
+
+**Hypothesis.** Single-phase voting, as used by the prototype's chain, is unsafe once messages can be delayed; adding a second phase with locking (Tendermint) repairs it.
+
+**Method.** A message-level simulator in which honest validators gossip every signed message and an adversary may delay any message but never forge or drop one. The scripted adversary (a) cuts validator 1 off during round 0, (b) lets round-0 finalising messages reach only validator 0, and (c) cuts validator 0 off once it decides. The same three rules are applied to both protocols. Then 1,000 random delay schedules per protocol with one validator that lies differently to everyone, and finally two coordinated liars out of four.
+
+**Result.** Single-phase: validator 0 finalises block A, the other three finalise block B — a fork with no dishonest participant. Two-phase: validators 2 and 3 lock on A in round 0, refuse validator 1's block B in round 1, and everyone finalises A in round 2. Random schedules: single-phase forks in 12 of 1,000; two-phase forks in none and always finalises. Two colluders: two-phase forks, and both honest validators can prove which two validators signed conflicting votes.
+
+**Does not show.** A real network stack, or the two-phase protocol driving the actual chain (values here are opaque identifiers). Timers are simplified; the liveness numbers mean "terminates in this model", not a performance claim.
+
 ## 4. `fraud` — four injected frauds
 
 | Injected | Detector | Found | Note |
@@ -74,7 +84,7 @@ Each is a candidate experiment: state the claim, write the attack, keep the resu
 0. **Awards that increase a debt, safely.** Damages, interest and costs up to a cap the parties pre-agree in the contract; three-member tribunals deciding by majority; a challenge procedure for a conflicted arbitrator.
 1. **Counter-signed purposes.** Require the payee to co-sign the purpose tag. Does it cut plausible mis-tagging, and what does it cost in friction?
 2. **Validator composition.** Simulate validator sets drawn from interest groups (state, banks, civil society). Which seat allocations keep every single interest under one third?
-3. **Two-phase consensus under partitions.** Replace `Network` with an asynchronous scheduler that delays and reorders messages; show single-phase voting failing, then fix it.
+3. **Integrate two-phase voting.** Drive `chain.py` blocks through `bft.py`'s protocol so the ledger itself, not just a model, survives the partition attack; then add validator-signed timestamps.
 4. **Threshold-encrypted vault.** Prose encrypted; decryption shares released by validators only against a finalised receipt.
 5. **Range proofs.** Add Bulletproofs so committed amounts are provably non-negative, then compute GDP over commitments.
 6. **Selective disclosure for audits.** A firm proves to an auditor that its committed payments sum to its declared revenue without opening them.

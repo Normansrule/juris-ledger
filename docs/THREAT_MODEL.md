@@ -13,7 +13,7 @@
 - Ed25519 and SHA-256 are secure.
 - Fewer than one third of validators are Byzantine (arbitrarily malicious) at any time.
 - Holders keep their private keys private. Key theft is out of scope for the protocol and in scope for a deployment (hardware keys, recovery, revocation).
-- The simulated network is synchronous. See "Known gaps".
+- `consensus.py` assumes a synchronous network; `bft.py` assumes only that messages are eventually delivered. See "Known gaps".
 
 ## Adversaries and outcomes
 
@@ -38,7 +38,8 @@
 
 ## Known gaps
 
-- **Single-phase voting.** Over an asynchronous network with round changes, a block could gather a quorum that some validators never see, while a later round finalises a different block. Tendermint's prevote/precommit locking or HotStuff's chained quorum certificates close this. Validity and accountability rules are unaffected.
+- **Single-phase voting in the chain's `Network`.** `bft.py` now demonstrates the failure (a fork with four honest validators under a delaying adversary) and the repair (prevote, precommit and locking: no fork in the scripted attack or in 1,000 random schedules with one lying validator). The repaired protocol is not yet the one driving `chain.py`; until it is, the prototype's chain is safe only on its synchronous simulated network. Validity and accountability rules are unaffected.
+- **The one-third bound is a hard limit.** Two colluding validators out of four fork even the two-phase protocol. What remains is accountability: the conflicting signatures are evidence. Choosing validators so that no single interest controls a third of the seats is therefore a governance requirement, not a detail.
 - **No fees or rate limits.** Spam resistance is out of scope.
 - **No key rotation or recovery.**
 - **Long-range history rewriting by retired validators** is not addressed; standard mitigations are checkpoints and unbonding periods.

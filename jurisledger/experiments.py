@@ -9,7 +9,7 @@ import json
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import consensus as C
-from . import fraud, legal, privacy
+from . import bft, fraud, legal, privacy
 from . import state as S
 from . import tx as T
 from .block import Block
@@ -561,7 +561,52 @@ def exp_disputes(verbose: bool = True) -> Dict[str, Any]:
     return {"checks": checks, "report": report}
 
 
+def exp_asynchrony(verbose: bool = True, runs: int = 1000) -> Dict[str, Any]:
+    """Why one round of voting is unsafe on a real network, and what fixes it."""
+    single, double = bft.run_partition(two_phase=False), bft.run_partition(two_phase=True)
+    a = double.nodes[0].decision
+    rival = "block-r1-by-v1"
+    checks: List[Check] = [
+        ("single-phase voting FORKS under a partition, with zero dishonest validators", single.forked()),
+        ("two-phase voting with locks, same adversary: all four validators finalise the same block",
+         not double.forked() and all(d == a for d in double.decisions().values())),
+        ("the lock did the work: a rival block was proposed in round 1, locked validators refused it",
+         rival in double.nodes[2].proposals.get(1, {}) and bft.TwoPhaseNode._n(double.nodes[2].prevotes, 1, rival) < 3
+         and double.nodes[2].locked_value == a and double.nodes[3].locked_value == a),
+    ]
+
+    stats = {}
+    for two_phase in (False, True):
+        forks = undecided = 0
+        for seed in range(runs):
+            sim = bft.run_fuzz(two_phase, seed, byzantine=1)
+            forks += sim.forked(sim.honest)
+            undecided += any(v is None for v in sim.decisions(sim.honest).values())
+        stats[two_phase] = (forks, undecided)
+    checks.append((f"{runs} random schedules with one lying validator: single-phase forks in some",
+                   stats[False][0] > 0))
+    checks.append((f"{runs} random schedules with one lying validator: two-phase never forks and always finalises",
+                   stats[True] == (0, 0)))
+
+    col = bft.run_collusion()
+    checks.append(("honesty check - the one-third bound is real: two of four colluding validators fork even two-phase",
+                   col.forked({2, 3})))
+    checks.append(("...but both colluders are provably guilty: every honest validator holds their conflicting signatures",
+                   bft.equivocators(col.nodes[2]) == {0, 1} == bft.equivocators(col.nodes[3])))
+    checks.append(("no honest validator is ever implicated", all(not bft.equivocators(n) for n in double.nodes)))
+
+    if verbose:
+        for label, sim in (("single-phase", single), ("two-phase   ", double)):
+            print(f"  {label}: " + "  ".join(f"v{i}={d}" for i, d in sim.decisions().items())
+                  + f"   -> {'FORK' if sim.forked() else 'agreement'}")
+        print(f"  random schedules ({runs} each, one lying validator): single-phase {stats[False][0]} forks; "
+              f"two-phase {stats[True][0]} forks, {stats[True][1]} unfinished")
+        print(f"  two colluders of four: v2={col.nodes[2].decision}, v3={col.nodes[3].decision}; "
+              f"provably guilty: {sorted(bft.equivocators(col.nodes[2]))}")
+    return {"checks": checks, "stats": stats}
+
+
 EXPERIMENTS: Dict[str, Callable[..., Dict[str, Any]]] = {
-    "contracts": exp_contracts, "legal": exp_legal, "disputes": exp_disputes, "attacks": exp_attacks, "gdp": exp_gdp,
+    "contracts": exp_contracts, "legal": exp_legal, "disputes": exp_disputes, "attacks": exp_attacks, "asynchrony": exp_asynchrony, "gdp": exp_gdp,
     "fraud": exp_fraud, "privacy": exp_privacy,
 }

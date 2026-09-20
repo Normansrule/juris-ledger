@@ -6,7 +6,7 @@ JurisLedger is a research framework with working code. It asks one question and 
 
 > *If contracts and payments were recorded on a ledger that no single institution controls, could agreements become harder to forge and easier to prove, could fraud become harder to hide, and could a country measure its own economy more truthfully — without handing anyone a new kind of central power?*
 
-Everything claimed in this README is backed by an experiment you can run in about twenty seconds:
+Everything claimed in this README is backed by an experiment you can run in about twenty-five seconds:
 
 ```bash
 python -m jurisledger all
@@ -26,10 +26,10 @@ python -m jurisledger all
 === Gross Domestic Product (GDP) measured from the ledger ===
   GDP expenditure : $2,196,332.41     ground truth    : $2,196,332.41
   ...
-ALL CHECKS PASSED          (62 claims)
+ALL CHECKS PASSED          (70 claims)
 ```
 
-> **Status:** research prototype, version 0.3. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
+> **Status:** research prototype, version 0.4. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
 
 ---
 
@@ -90,6 +90,7 @@ In plain words:
 | Gross Domestic Product (GDP) is estimated from surveys and tax files, arrives late and gets revised for years | Payments carry validated purpose tags; GDP by expenditure, production and income become sums that must agree | `jurisledger/stats.py`, `jurisledger/state.py` | `python -m jurisledger gdp` |
 | Statistics depend on trusting one producer | Anyone can recompute every figure from the public chain | `Chain.audit`, `jurisledger/stats.py` | `gdp`, `attacks` |
 | A central operator can alter, censor or invent records | Byzantine-fault-tolerant quorum; validators have narrow, checkable powers and lose their seat if caught cheating | `jurisledger/chain.py`, `jurisledger/consensus.py` | `python -m jurisledger attacks` |
+| Simple voting schemes quietly assume the network is reliable | A message-level simulator with an adversary that delays anything: single-phase voting forks with *no* dishonest validator; Tendermint-style two-phase voting with locks survives the same attack and 1,000 random ones | `jurisledger/bft.py` | `python -m jurisledger asynchrony` |
 | Asymmetric information: each lender, buyer or regulator sees only its own slice | One shared record: a receivable pledged to two banks, or money moving in a circle, is a lookup instead of an investigation | `jurisledger/fraud.py` | `python -m jurisledger fraud` |
 | A transparent ledger is a surveillance machine | Experimental: amounts hidden in Pedersen commitments whose *total* is still provable; differentially private sector statistics | `jurisledger/privacy.py`, `jurisledger/stats.py` | `python -m jurisledger privacy` |
 
@@ -106,8 +107,8 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 python -m jurisledger all          # run every experiment
-python -m jurisledger legal        # or one of: contracts | legal | disputes | attacks | gdp | fraud | privacy
-python -m pytest             # 63 tests; every printed claim is also asserted
+python -m jurisledger legal        # or one of: contracts | legal | disputes | attacks | asynchrony | gdp | fraud | privacy
+python -m pytest             # 109 tests; every printed claim is also asserted
 python examples/quickstart.py
 ```
 
@@ -156,7 +157,30 @@ This is the family of Practical Byzantine Fault Tolerance (PBFT) and Tendermint.
 
 **Limited powers by design.** A validator can order valid transactions and delay them briefly. It cannot spend from an account, alter a contract, change a purpose tag, or finalise a block alone, because honest validators will not sign such a block and outsiders will not accept a block without a certificate.
 
-### 3. Contracts that are legal documents *and* data
+### 3. Why two phases: consensus on a hostile network
+
+```mermaid
+sequenceDiagram
+    participant V0
+    participant V1
+    participant V2
+    participant V3
+    Note over V0,V3: Round 0. V0 proposes block A. The adversary only DELAYS messages.
+    V2->>V0: vote A
+    V3->>V0: vote A
+    Note over V0: quorum seen: V0 finalises A, then is cut off
+    Note over V1,V3: never saw the quorum, time out, round 1: V1 proposes block B
+    rect rgba(200, 60, 60, 0.15)
+    Note over V1,V3: SINGLE-PHASE: one vote per round is allowed, so they vote B and finalise B. FORK.
+    end
+    rect rgba(60, 160, 90, 0.15)
+    Note over V2,V3: TWO-PHASE: V2 and V3 saw a quorum of prevotes for A and LOCKED on it.<br/>They refuse B. Round 2: V2 re-proposes A with proof, V1 accepts, all finalise A.
+    end
+```
+
+`jurisledger/bft.py` runs both protocols over the *same* adversarial scheduler. The adversary forges nothing and drops nothing; it only chooses when messages arrive. That is enough to fork single-phase voting with four honest validators. The fix is the lock: any two quorums share an honest validator, and a locked validator will not help finalise a rival block. The experiment also shows the limit honestly: with two of four validators colluding, even two-phase voting forks, but every honest validator ends up holding the colluders' conflicting signatures, so the guilty are provable.
+
+### 4. Contracts that are legal documents *and* data
 
 ```mermaid
 stateDiagram-v2
@@ -170,7 +194,7 @@ stateDiagram-v2
 
 Following Ian Grigg's *Ricardian contract*, the human-readable text stays off the ledger in a `ContractVault`; the ledger holds its SHA-256 hash. The vault hands out text only in exchange for a finalised, signed `CONTRACT_ACCESS` receipt, one receipt per read. That is how "who viewed it" becomes a fact instead of a server log someone can edit. References are typed (`cites`, `implements`, `amends`, `supersedes`) and can point to other contracts or to any external document by hash — a statute, a technical standard, an invoice.
 
-### 4. Obligations and evidence a third party can check
+### 5. Obligations and evidence a third party can check
 
 ```mermaid
 flowchart LR
@@ -184,7 +208,7 @@ flowchart LR
 
 The evidence file is the bridge to the existing legal system. An arbitrator does not need an account, a node, or trust in either party: the file either verifies against the published validator keys or it does not. Its limit is stated in the code and tested: a file proves what happened, never that nothing else happened. See [`docs/LEGAL.md`](docs/LEGAL.md).
 
-### 5. Disputes: a referee with a short list of powers
+### 6. Disputes: a referee with a short list of powers
 
 ```mermaid
 stateDiagram-v2
@@ -198,7 +222,7 @@ stateDiagram-v2
 
 The same "limited action" principle that binds validators binds the arbitrator. It is chosen by the parties inside the contract they all signed, may read a restricted contract (leaving a receipt like anyone else), and its award can only **reduce, postpone or waive** an obligation that is actually in dispute. While a dispute is open the obligation shows as `DISPUTED`, not `OVERDUE`. The ledger never seizes funds: after the award the debtor still pays with its own signature, and if it does not, the record says `OVERDUE` and the evidence file goes to a court.
 
-### 6. National accounts as a by-product
+### 7. National accounts as a by-product
 
 ```mermaid
 flowchart TD
@@ -216,7 +240,7 @@ flowchart TD
 
 The two totals come from different transactions, so their agreement is a genuine check. A hand-computed example lives in [`tests/test_stats_privacy.py`](tests/test_stats_privacy.py).
 
-### 7. Fraud: prevented versus detected
+### 8. Fraud: prevented versus detected
 
 | Made impossible by the protocol | Flagged for human review by `jurisledger/fraud.py` |
 |---|---|
@@ -238,6 +262,8 @@ The detectors report their false positives too; the experiment prints the flags 
 | One malicious validator | Delay a victim's transaction by about one block; waste a round | Forge, censor permanently, fork honest nodes; equivocation costs it its seat | `attacks` b, f, g |
 | Up to one third of validators offline | Slow the chain | Stop it | `attacks` h |
 | One third or more refusing to vote | Halt the chain | Corrupt it — nothing false is ever finalised | `attacks` h |
+| The network itself (delays, partitions, reordering) | Stall progress while the partition lasts; fork *single-phase* voting | Fork two-phase voting; forge or alter any message | `asynchrony` |
+| One third or more of validators colluding | Fork even two-phase voting among cut-off honest validators | Do it deniably: their conflicting signatures convict them | `asynchrony` |
 | Two thirds or more colluding | Finalise an invalid block among themselves | Make any honest auditor accept it: replay from genesis fails | `Chain.audit` |
 | The arbitrator named in a contract | Reduce, postpone or waive a disputed obligation; read the contract (receipted) | Act without a party's claim, decide twice, increase a debt, touch undisputed terms, move money | `disputes` |
 | Whoever stores the contract text | Refuse to serve it | Alter it undetected, or serve it without a receipt being owed | `contracts` |
@@ -254,7 +280,7 @@ Stated plainly, because a framework that hides its gaps is a sales brochure.
 2. **Honest-looking lies.** The protocol checks that a tag fits the *roles* involved, not that a firm's "investment" really was a machine and not a yacht. Cross-checks narrow this; they do not close it.
 3. **Identity.** Registration here is self-service. A real deployment needs an answer to fake identities (the Sybil problem) that does not recreate a central gatekeeper.
 4. **Privacy is unfinished.** The commitment scheme lacks range proofs, and our own experiment shows differential privacy is far too noisy for an economy of sixty firms (about 50 % error at ε = 1). It becomes usable only at national scale.
-5. **Consensus is simplified.** Voting is single-phase over a simulated synchronous network. A real network needs the two-phase locking of Tendermint or HotStuff.
+5. **Consensus is modelled, not yet integrated.** `bft.py` proves the two-phase protocol on opaque block identifiers over a simulated hostile network. The chain's own `Network` still uses single-phase voting over instant delivery; wiring the two together, then onto real sockets, is the next roadmap step.
 6. **Law.** Electronic signatures have legal effect in many places (the United States ESIGN Act and Uniform Electronic Transactions Act, the European Union eIDAS Regulation), but a permanent ledger sits uneasily with data-erasure rights. That is why JurisLedger keeps prose and personal data off-chain. Whether a tribunal admits an evidence file is a question for that tribunal. None of this is legal advice.
 7. **National accounts are harder than this.** No inventories, depreciation, imputed rents or financial-intermediation services. See [`docs/ECONOMICS.md`](docs/ECONOMICS.md).
 
@@ -270,14 +296,15 @@ jurisledger/
   state.py         the state machine: every validation rule lives here
   chain.py         block validation, commit certificates, full audit, light-client proofs
   consensus.py     validator nodes, simulated network, Byzantine behaviours
+  bft.py           hostile-network laboratory: single-phase versus two-phase (Tendermint-style) voting
   contracts.py     wallet helpers, contract vault, audit trail, provenance tree
   legal.py         obligations, compliance, dispute records, offline-verifiable evidence files
   stats.py         GDP three ways, differentially private release
   fraud.py         four detectors
   privacy.py       Pedersen commitments (experimental)
   sim.py           synthetic economy with independent ground truth
-  experiments.py   the seven experiments; every claim is a checked boolean
-tests/             63 tests
+  experiments.py   the eight experiments; every claim is a checked boolean
+tests/             109 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```

@@ -1,4 +1,4 @@
-"""Command-line entry point:  python -m jurisledger [all|contracts|legal|disputes|attacks|gdp|fraud|privacy]"""
+"""Command-line entry point:  python -m jurisledger [all|contracts|legal|disputes|attacks|asynchrony|gdp|fraud|privacy]"""
 from __future__ import annotations
 
 import sys
@@ -6,6 +6,7 @@ import sys
 from .experiments import EXPERIMENTS
 
 TITLES = {
+    "asynchrony": "Consensus on a hostile network: single-phase versus two-phase voting",
     "gdp": "Gross Domestic Product (GDP) measured from the ledger",
     "contracts": "Signed digital contracts with references and an access trail",
     "legal": "Obligations, compliance and court-ready evidence files",
