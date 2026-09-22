@@ -38,14 +38,17 @@
 
 | 16 | Key theft or loss | Owner rotates the key at once (`KEY_ROTATE`); a lost key is recovered by the issuers that attested the account, after a waiting period during which the current key can veto; contracts, obligations and evidence files follow the new key; the old key can never sign again | A thief who acts before the owner rotates. *k* colluding issuers against an owner who does not look for the whole veto window |
 | 17 | A forged or unsigned consensus vote | Every proposal, prevote and precommit is signed and verified on receipt; announcements of finality are accepted only with a verifiable certificate | None within assumptions |
+| 19 | A validator crashes mid-consensus | It restarts from its store, asks a peer for the blocks it missed, re-verifies each certificate, and rejoins at the current height; the others never stopped (they are a quorum) | Two of four crashing halts the chain until one returns — by design |
 | 18 | The block file is edited on disk, or power fails mid-write | The store re-audits every block when opened; a torn final line is detected and cut off; a block is acknowledged only after it is flushed to disk | Loss of the whole disk: keep replicas (every validator is one) |
 
 ## Known gaps
 
-- **Simulated transport.** The real chain now runs on signed two-phase consensus (`ledgernet.py`) and passes the partition attack and every earlier claim, but messages travel through an in-process simulator. Sockets, peer authentication and denial-of-service protection do not exist yet. The original single-phase `consensus.Network` is kept as the baseline that the `integration` experiment shows forking.
+- **Plain TCP.** `net.py` runs validators as processes over TCP; every consensus message and transaction is signed and verified, and every block received during catch-up has its certificate re-checked, so the wire cannot inject anything. It is not encrypted and connections are not authenticated or rate-limited: an attacker on the network can read traffic and open connections until the listener is exhausted. Deploy over a private network or TLS; add connection limits (roadmap).
+- **Empty blocks.** An idle proposer waits two seconds and then proposes an empty block, so a quiet ledger still grows. Acceptable for a public register; tune `IDLE_BLOCK_SECONDS` or add a proper idle mode for low-volume deployments.
 - **The one-third bound is a hard limit.** Two colluding validators out of four fork even the two-phase protocol. What remains is accountability: the conflicting signatures are evidence. Choosing validators so that no single interest controls a third of the seats is therefore a governance requirement, not a detail.
 - **No fees or rate limits.** Spam resistance is out of scope.
 - **Validator and issuer keys** change only through governance votes (remove the old key, add the new); there is no in-place rotation for them.
+- **Timestamps.** Blocks now carry the proposer's clock and each vote endorses it; validators refuse a header more than five minutes from their own clock. A finalised timestamp is therefore within tolerance of an honest clock, not exact. Fine for due dates measured in blocks or hours; not for microsecond ordering.
 - **Long-range history rewriting by retired validators** is not addressed; standard mitigations are checkpoints and unbonding periods.
 
 ## Why "limited action" is the core idea

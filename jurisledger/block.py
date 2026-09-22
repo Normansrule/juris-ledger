@@ -17,18 +17,19 @@ class BlockHeader:
     tx_root: str        # Merkle root of the transaction ids
     state_root: str     # digest of the ledger state AFTER applying this block
     proposer: str
+    timestamp: int = 0  # proposer's clock, milliseconds since the Unix epoch; endorsed by every vote
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "chain_id": self.chain_id, "height": self.height, "round": self.round,
             "prev_hash": self.prev_hash, "tx_root": self.tx_root,
-            "state_root": self.state_root, "proposer": self.proposer,
+            "state_root": self.state_root, "proposer": self.proposer, "timestamp": self.timestamp,
         }
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "BlockHeader":
         return BlockHeader(d["chain_id"], d["height"], d["round"], d["prev_hash"],
-                           d["tx_root"], d["state_root"], d["proposer"])
+                           d["tx_root"], d["state_root"], d["proposer"], d.get("timestamp", 0))
 
     @property
     def hash(self) -> str:

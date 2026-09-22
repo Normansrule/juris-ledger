@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0 — real processes, real sockets, real time
+- `net.py`: validators as separate processes over TCP; length-prefixed signed JSON frames; transaction gossip; block catch-up with certificate re-verification; resume from the on-disk store; `Client` for wallets and tools. `cluster.py` and `jurisledger cluster` run four processes, pay, kill one, restart it and check it rejoins. `jurisledger node`, `jurisledger keygen`; key files with the raw Ed25519 seed.
+- Block headers carry a proposer timestamp endorsed by every vote; validators refuse headers more than five minutes from their clock; the chain rejects time running backwards.
+- Idle proposers wait two seconds before proposing an empty block.
+- 122 tests.
+
 ## 0.5.0 — security, usability and viability for public-sector use
 - **Security.** `ledgernet.py`: the real chain runs on signed two-phase consensus; certificates record their voting round; equivocation evidence is per voting round; finality announcements are verified, never trusted. All earlier claims re-run on it. Identity from *k* independent issuers (`ATTEST`, `ATTEST_REVOKE`, issuer governance), capped unverified accounts, verified contract parties. `KEY_ROTATE` and issuer-assisted recovery with an owner veto window; contracts, obligations and evidence files follow key changes.
 - **Usability.** `jurisledger demo`, `audit`, `verify`, `register`, `bench`; a self-contained browsable public register; plain-language verdicts and error messages; readable labels in evidence files.

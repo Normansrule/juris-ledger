@@ -78,6 +78,16 @@ Fourteen claims, lettered in the source: (a) history tampering, (b) forged payme
 
 **Does not show.** Behaviour over real sockets, or any latency figure.
 
+## 3d. `cluster` — four processes over TCP (not in `all`; run `jurisledger cluster` or `tests/test_net.py`)
+
+**Hypothesis.** The protocol survives real process boundaries, sockets and a crash.
+
+**Method.** Four validator processes on one machine, each with its own key file, port and on-disk store. Three transactions are submitted through three different validators. One process is killed; the others continue; it is restarted from its store and asked to catch up.
+
+**Result.** Block 1 finalises; all three transactions are in the exported, locally re-audited chain; all four nodes hold the same state digest; three nodes keep finalising after the kill; the restarted node reports "caught up: blocks 5-8 received from a peer, every certificate re-verified" and matches the others. About 30 seconds on a laptop.
+
+**Does not show.** Behaviour across real network distances, under packet loss, or under TLS.
+
 ## 4. `fraud` — four injected frauds
 
 | Injected | Detector | Found | Note |
@@ -104,7 +114,7 @@ Each is a candidate experiment: state the claim, write the attack, keep the resu
 0. **Awards that increase a debt, safely.** Damages, interest and costs up to a cap the parties pre-agree in the contract; three-member tribunals deciding by majority; a challenge procedure for a conflicted arbitrator.
 1. **Counter-signed purposes.** Require the payee to co-sign the purpose tag. Does it cut plausible mis-tagging, and what does it cost in friction?
 2. **Validator composition.** Simulate validator sets drawn from interest groups (state, banks, civil society). Which seat allocations keep every single interest under one third?
-3. **Real transport.** Run each validator as a process talking over authenticated sockets; add validator-signed timestamps; measure latency honestly.
+3. **Multi-machine run.** `jurisledger node` on four hosts with TLS between them; measure block latency and catch-up time honestly.
 4. **Threshold-encrypted vault.** Prose encrypted; decryption shares released by validators only against a finalised receipt.
 5. **Range proofs.** Add Bulletproofs so committed amounts are provably non-negative, then compute GDP over commitments.
 6. **Selective disclosure for audits.** A firm proves to an auditor that its committed payments sum to its declared revenue without opening them.

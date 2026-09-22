@@ -83,9 +83,9 @@ Each phase is useful if the next never happens.
 
 ## 7. What is still missing in the software
 
-1. Real networking (the validators are simulated in one process), peer authentication and denial-of-service protection.
+1. Transport hardening: validators now run as processes over TCP (`jurisledger cluster`), but without TLS, peer authentication at the socket level, connection limits or peer discovery.
 2. Confidential amounts with range proofs; today balances and counterparties are public, which no state should accept for general payments.
-3. Validator-signed wall-clock time; blocks only have heights.
+3. Finer time: block timestamps are validator-endorsed to within a five-minute tolerance; tighter guarantees need synchronised clocks.
 4. Fees or quotas against spam.
 5. Snapshots and pruning; the audit currently replays everything.
 6. Formal verification of the state machine, and an external security review.

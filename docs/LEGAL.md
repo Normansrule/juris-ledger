@@ -38,7 +38,7 @@ Proves, to anyone holding the validators' public keys:
 Does not prove:
 
 - **completeness** — a file can omit a later superseding contract or a payment. Ask a full node, or require the file to be produced by a neutral one;
-- **wall-clock time** — blocks have heights, not timestamps, in this version. A deployment would bind heights to time through validator-signed timestamps;
+- **exact wall-clock time** — a block's timestamp is the proposer's clock, endorsed by every validator that voted (each refuses a time more than five minutes from its own), so it is trustworthy to within that tolerance, not to the second;
 - **who was holding the key**, or that they had capacity and authority;
 - **what the words mean.** The ledger records agreements; interpretation stays with people.
 

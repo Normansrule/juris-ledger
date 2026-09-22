@@ -60,6 +60,8 @@ class Chain:
             raise InvalidBlock(f"wrong height {h.height}, expected {self.height + 1}")
         if h.prev_hash != self.tip_hash:
             raise InvalidBlock("prev_hash does not match the current tip")
+        if self.blocks and h.timestamp < self.blocks[-1].header.timestamp:
+            raise InvalidBlock("timestamp runs backwards")
         if h.round < 0 or h.proposer != self.expected_proposer(h.height, h.round, parent):
             raise InvalidBlock("not this validator's turn to propose")
         if block.computed_tx_root() != h.tx_root:

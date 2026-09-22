@@ -14,4 +14,5 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: python -m pytest -q
       - run: python -m jurisledger all
+      - run: jurisledger cluster --out cluster
       - run: jurisledger demo --out demo && jurisledger audit demo/chain.json && jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json

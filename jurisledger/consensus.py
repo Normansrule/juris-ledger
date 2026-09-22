@@ -26,6 +26,7 @@ Byzantine behaviours are included so the experiments can attack the system:
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -50,6 +51,8 @@ class Node:
         self.voted: Dict[Tuple[int, int], str] = {}
         self.seen: Dict[Tuple[str, int, int], Tuple[BlockHeader, str]] = {}
         self.reported: set = set()
+        self.clock = time.time                    # seconds; replaceable for tests
+        self.clock_tolerance_ms = 5 * 60 * 1000   # how far a proposer's clock may differ from ours
 
     @property
     def address(self) -> str:
@@ -84,8 +87,10 @@ class Node:
                     continue
         for t in extra or []:                     # Byzantine: append without validating
             chosen.append(t)
+        prev_ts = self.chain.blocks[-1].header.timestamp if self.chain.blocks else 0
         header = BlockHeader(self.chain.chain_id, height, round_, self.chain.tip_hash,
-                             merkle_root([t.txid for t in chosen]), state.root(), self.address)
+                             merkle_root([t.txid for t in chosen]), state.root(), self.address,
+                             max(int(self.clock() * 1000), prev_ts + 1))
         return Block(header, chosen)
 
     def sign_vote(self, block: Block) -> str:
@@ -131,12 +136,20 @@ class Node:
             return self.sign_vote(block)          # happily votes for both of its own blocks
         if (h.height, h.round) in self.voted and self.voted[(h.height, h.round)] != block.hash:
             return None                           # honest rule: one vote per (height, round)
+        if not self.clock_ok(block):
+            return None
         try:
             self.chain.execute(block)
         except InvalidBlock:
             return None
         self.voted[(h.height, h.round)] = block.hash
         return self.sign_vote(block)
+
+    def clock_ok(self, block: Block) -> bool:
+        """A vote endorses the header's timestamp, so refuse one far from our own clock.
+        Not a chain rule (clocks are not deterministic), but with an honest quorum every
+        finalised timestamp lies within tolerance of at least one honest validator's clock."""
+        return abs(block.header.timestamp - int(self.clock() * 1000)) <= self.clock_tolerance_ms
 
     # -- accountability ------------------------------------------------- #
     def observe(self, header: BlockHeader, signer: str, sig: str) -> Optional[T.Transaction]:

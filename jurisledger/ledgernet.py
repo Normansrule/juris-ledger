@@ -107,6 +107,8 @@ class _BlockMixin:
             return False
         if value not in self.validity:
             try:
+                if not self.inner.clock_ok(self.blocks[value]):
+                    raise InvalidBlock("timestamp too far from local clock")
                 self.inner.chain.execute(self.blocks[value])
                 self.validity[value] = True
             except InvalidBlock:

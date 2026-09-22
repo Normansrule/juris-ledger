@@ -81,6 +81,15 @@ class KeyPair:
         return KeyPair._from_private(Ed25519PrivateKey.from_private_bytes(raw))
 
     @staticmethod
+    def from_secret_hex(secret: str) -> "KeyPair":
+        return KeyPair._from_private(Ed25519PrivateKey.from_private_bytes(bytes.fromhex(secret)))
+
+    def secret_hex(self) -> str:
+        """The 32-byte private seed.  Store it like a password."""
+        return self._private.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+                                           serialization.NoEncryption()).hex()
+
+    @staticmethod
     def _from_private(priv: Ed25519PrivateKey) -> "KeyPair":
         pub = priv.public_key().public_bytes(
             encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw

@@ -4,7 +4,7 @@
 |---|---|---|
 | 0 (this release) | Single-process prototype, ten experiments, threat model | `python -m jurisledger all` and `python -m pytest` pass |
 | 1 (done in 0.5) | Two-phase Byzantine-fault-tolerant consensus over an adversarial message scheduler, driving real blocks with signed votes | `asynchrony` and `integration` pass; all earlier claims hold on the new network |
-| 2 (storage done in 0.5) | Real networking: nodes as processes, gossip over sockets. Durable block store exists | Four nodes on four machines finalise blocks; one is killed and rejoins from its store |
+| 2 (done in 0.6, plain TCP) | Nodes as processes over sockets with durable stores. Remaining: TLS, connection limits, peer discovery | `jurisledger cluster` passes: four processes finalise, one is killed and rejoins from its store (done); the same across four machines with TLS (to do) |
 | 3 (framework done in 0.5) | Identity: attestations from several independent issuers, key rotation and recovery. Remaining: real credential formats, issuer liability rules | `identity` passes (done); a pilot issuer integrates a real credential check (to do) |
 | 4 | Confidential amounts with range proofs; GDP computed over commitments | The `gdp` experiment passes with no plaintext amounts on-chain |
 | 5 | Threshold-encrypted contract vault | A host that leaks ciphertext leaks nothing |

@@ -7,6 +7,10 @@
   jurisledger register CHAIN.json [-o FILE.html]
                                           render the browsable public register
   jurisledger bench                       performance of this prototype on this machine
+  jurisledger cluster [--out DIR] [--n 4] run N validator processes over TCP, kill and rejoin one
+  jurisledger node --genesis G --key K --peers P --store DIR --index I [--listen HOST:PORT]
+                                          run one validator (a process per machine in a deployment)
+  jurisledger keygen [-o FILE]            make a validator or wallet key file
   jurisledger all | NAME                  run every experiment, or one of:
       contracts legal disputes identity attacks asynchrony integration gdp fraud privacy
 """
@@ -99,6 +103,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("command", nargs="?", default="all")
     ap.add_argument("paths", nargs="*")
     ap.add_argument("-o", "--out", default=None)
+    ap.add_argument("--n", type=int, default=4)
+    ap.add_argument("--genesis"); ap.add_argument("--key"); ap.add_argument("--peers")
+    ap.add_argument("--store"); ap.add_argument("--index", type=int); ap.add_argument("--listen")
+    ap.add_argument("--until", type=int, default=None)
     args = ap.parse_args(argv[1:])
     cmd = args.command
 
@@ -127,6 +135,33 @@ def main(argv: list[str]) -> int:
         out = args.out or "register.html"
         Path(out).write_text(render(chain))
         print(f"Wrote {out}")
+        return 0
+    if cmd == "cluster":
+        from .cluster import run
+        r = run(args.out or "cluster", args.n)
+        print("\nCLUSTER OK" if r.get("ok") else "\nCLUSTER FAILED: " + json.dumps(r))
+        return 0 if r.get("ok") else 1
+    if cmd == "node":
+        from .crypto import KeyPair
+        from .net import serve
+        if not all([args.genesis, args.key, args.peers, args.store, args.index is not None]):
+            print("node needs --genesis --key --peers --store --index"); return 2
+        genesis = json.loads(Path(args.genesis).read_text())
+        key = KeyPair.from_secret_hex(json.loads(Path(args.key).read_text())["secret"])
+        peers = [(h, int(p)) for h, p in (x.rsplit(":", 1) for x in json.loads(Path(args.peers).read_text()))]
+        listen = tuple(args.listen.rsplit(":", 1)) if args.listen else ("0.0.0.0", peers[args.index][1])
+        listen = (listen[0], int(listen[1]))
+        if key.address != genesis["validators"][args.index]:
+            print("the key does not match validator", args.index, "in the genesis"); return 2
+        print(f"validator {args.index} listening on {listen[0]}:{listen[1]}", flush=True)
+        serve(key, genesis, peers, args.store, listen, until_height=args.until,
+              log=lambda m: print(m, flush=True))
+        return 0
+    if cmd == "keygen":
+        from .crypto import KeyPair
+        k = KeyPair.generate()
+        Path(args.out or "key.json").write_text(json.dumps({"secret": k.secret_hex(), "address": k.address}))
+        print(f"wrote {args.out or 'key.json'}; public key {k.address}")
         return 0
     if cmd == "bench":
         from .bench import run

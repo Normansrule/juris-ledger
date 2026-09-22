@@ -7,4 +7,4 @@ A research framework for a permissioned, Byzantine-fault-tolerant ledger that
 (2) measures economic activity directly from validated transactions, and
 (3) is attacked on purpose, in code, to show what each adversary can and cannot do.
 """
-__version__ = "0.5.0"
+__version__ = "0.6.0"
