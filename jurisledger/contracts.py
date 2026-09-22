@@ -70,6 +70,25 @@ class Wallet:
     def grant(self, contract_id: str, grantee: str) -> T.Transaction:
         return self.make(T.CONTRACT_GRANT, {"contract_id": contract_id, "grantee": grantee})
 
+    # identity and key helpers ------------------------------------------ #
+    def attest(self, subject: str, credential: str) -> T.Transaction:
+        return self.make(T.ATTEST, {"subject": subject, "credential_hash": prose_hash(credential)})
+
+    def revoke_attestation(self, subject: str) -> T.Transaction:
+        return self.make(T.ATTEST_REVOKE, {"subject": subject})
+
+    def rotate_key(self, new_key: str) -> T.Transaction:
+        return self.make(T.KEY_ROTATE, {"new_key": new_key})
+
+    def request_recovery(self, subject: str, new_key: str) -> T.Transaction:
+        return self.make(T.RECOVERY_REQUEST, {"subject": subject, "new_key": new_key})
+
+    def veto_recovery(self) -> T.Transaction:
+        return self.make(T.RECOVERY_VETO, {})
+
+    def finalize_recovery(self, subject: str, new_key: str) -> T.Transaction:
+        return self.make(T.RECOVERY_FINALIZE, {"subject": subject, "new_key": new_key})
+
     # dispute helpers ---------------------------------------------------- #
     def open_dispute(self, contract_id: str, claim: str, obligations: Optional[List[str]] = None) -> T.Transaction:
         return self.make(T.DISPUTE_OPEN, {"contract_id": contract_id, "claim_hash": prose_hash(claim),

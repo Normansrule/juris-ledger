@@ -29,8 +29,8 @@ conflicting votes are all counted, as in the paper - safety must survive that.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from dataclasses import dataclass, field, replace
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 PROPOSAL, VOTE, PREVOTE, PRECOMMIT, DECIDE = "PROPOSAL", "VOTE", "PREVOTE", "PRECOMMIT", "DECIDE"
 NIL = None
@@ -50,6 +50,8 @@ class Msg:
     valid_round: int = -1
     sent: int = 0
     via: int = -1                 # who transmitted this copy (the signer, or an honest relayer)
+    sig: str = ""                 # used when the protocol carries real blocks (ledgernet.py)
+    payload: Any = None           # the proposed or decided block, when there is one
 
     @property
     def final(self) -> bool:
@@ -89,15 +91,28 @@ class _Node:
     def _quorum_value(self, table: Dict[int, Dict[Optional[str], Set[int]]]) -> Optional[str]:
         for by_value in table.values():
             for v, senders in by_value.items():
-                if v is not NIL and len(senders) >= self.q:
+                if v is not NIL and len(senders) >= self.q and self._can_decide(v):
                     return v
         return None
 
     def proposer(self, round_: int) -> int:
         return round_ % self.n
 
+    def _make(self, kind: str, value: Optional[str], valid_round: int) -> Msg:
+        return Msg(kind, self.round, value, self.i, valid_round=valid_round)
+
     def broadcast(self, kind: str, value: Optional[str], valid_round: int = -1) -> None:
-        self.sim.broadcast(Msg(kind, self.round, value, self.i, valid_round=valid_round))
+        self.sim.broadcast(self._make(kind, value, valid_round))
+
+    # hooks overridden when values are real blocks
+    def _new_value(self, r: int) -> str:
+        return f"block-r{r}-by-v{self.i}"
+
+    def _valid(self, value: Optional[str]) -> bool:
+        return True
+
+    def _can_decide(self, value: str) -> bool:
+        return True
 
     def _timed_out(self) -> bool:
         """Timeouts grow with the round number, so that rounds eventually outlast any finite delay."""
@@ -135,7 +150,7 @@ class SinglePhaseNode(_Node):
         self.round = r
         self._enter("propose")
         if self.proposer(r) == self.i:
-            self.broadcast(PROPOSAL, f"block-r{r}-by-v{self.i}")
+            self.broadcast(PROPOSAL, self._new_value(r))
 
     def receive(self, m: Msg) -> None:
         if self._adopt(m) or not self._new(m):
@@ -151,9 +166,11 @@ class SinglePhaseNode(_Node):
             return
         ps = self.proposals.get(self.round)
         if ps and self.step == "propose" and self.round not in self.voted:
-            self.voted.add(self.round)            # the honest rule: one vote per (height, round)
-            self._enter("vote")
-            self.broadcast(VOTE, next(iter(ps)))
+            choice = next((v for v in ps if self._valid(v)), None)
+            if choice is not None:
+                self.voted.add(self.round)        # the honest rule: one vote per (height, round)
+                self._enter("vote")
+                self.broadcast(VOTE, choice)
         v = self._quorum_value(self.votes)
         if v is not None:
             self._decide(v)
@@ -183,7 +200,7 @@ class TwoPhaseNode(_Node):
         self.round = r
         self._enter("propose")
         if self.proposer(r) == self.i:
-            value = self.valid_value or f"block-r{r}-by-v{self.i}"
+            value = self.valid_value or self._new_value(r)
             self.broadcast(PROPOSAL, value, self.valid_round)
 
     def receive(self, m: Msg) -> None:
@@ -207,6 +224,8 @@ class TwoPhaseNode(_Node):
 
     def _acceptable(self, p: Msg) -> Optional[bool]:
         """None: cannot judge this proposal yet.  True / False: prevote for it / for nil."""
+        if not self._valid(p.value):
+            return False
         if p.valid_round == -1:
             return self.locked_round == -1 or self.locked_value == p.value
         if 0 <= p.valid_round < self.round and self._n(self.prevotes, p.valid_round, p.value) >= self.q:
@@ -375,7 +394,7 @@ class Sim:
 
     def broadcast(self, m: Msg) -> None:
         for dst in range(len(self.nodes)):
-            copy = Msg(m.kind, m.round, m.value, m.src, dst, m.valid_round, via=m.src)
+            copy = replace(m, dst=dst, via=m.src)
             if dst == m.src:
                 copy.sent = self.time
                 self.nodes[dst].receive(copy)   # a node hears itself at once
@@ -385,7 +404,7 @@ class Sim:
     def relay(self, m: Msg, relayer: int) -> None:
         for dst in range(len(self.nodes)):
             if dst not in (relayer, m.src, m.via):
-                self.send(Msg(m.kind, m.round, m.value, m.src, dst, m.valid_round, via=relayer))
+                self.send(replace(m, dst=dst, via=relayer))
 
     def step(self) -> None:
         self.time += 1
@@ -416,26 +435,30 @@ class Sim:
 # --------------------------------------------------------------------------- #
 # The scripted adversary.  It forges nothing and drops nothing -- it only delays.
 # --------------------------------------------------------------------------- #
-def partition_adversary(m: Msg, sim: Sim) -> bool:
-    """Three delays, applied identically to both protocols (four validators, v0..v3).
+def make_partition_adversary(first: int = 0, cut: int = 1) -> Hold:
+    """Three delays, applied identically to both protocols.
 
-    1. v1 is cut off during round 0, until every undecided validator has left round 0.
-    2. Round-0 *finalising* messages (VOTE / PRECOMMIT) reach only v0.
-    3. As soon as v0 decides, v0 is cut off: nothing new from it, nothing to it.
+    ``first`` is the round-0 proposer, ``cut`` the round-1 proposer.
+    1. ``cut`` is cut off during round 0, until every undecided validator has left round 0.
+    2. Round-0 *finalising* messages (VOTE / PRECOMMIT) reach only ``first``.
+    3. As soon as ``first`` decides, it is cut off: nothing new from it, nothing to it.
     Delays 2 and 3 last until ``sim.flags['healed']`` is set.
     """
-    healed = sim.flags.get("healed", False)
-    in_round_0 = any(nd.decision is None and nd.round == 0 for nd in sim.nodes)
-    if m.round == 0 and 1 in (m.via, m.dst) and in_round_0:
-        return True
-    if healed:
-        return False
-    if m.round == 0 and m.final and m.dst != 0:
-        return True
-    v0 = sim.nodes[0]
-    if v0.decision is not None and (m.dst == 0 or (m.via == 0 and m.sent >= (v0.decided_at or 0))):
-        return True
-    return False
+    def hold(m: Msg, sim: Sim) -> bool:
+        in_round_0 = any(nd.decision is None and nd.round == 0 for nd in sim.nodes)
+        if m.round == 0 and cut in (m.via, m.dst) and in_round_0:
+            return True
+        if sim.flags.get("healed", False):
+            return False
+        if m.round == 0 and m.final and m.dst != first:
+            return True
+        leader = sim.nodes[first]
+        return leader.decision is not None and (
+            m.dst == first or (m.via == first and m.sent >= (leader.decided_at or 0)))
+    return hold
+
+
+partition_adversary = make_partition_adversary(0, 1)
 
 
 def run_partition(two_phase: bool, ticks: int = 80) -> Sim:

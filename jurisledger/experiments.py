@@ -18,6 +18,7 @@ from .consensus import Network
 from .contracts import (ContractVault, VaultError, Wallet, audit_trail, cite, cite_external,
                         provenance, summary)
 from .crypto import KeyPair, sha256_hex
+from .ledgernet import LedgerNetwork, TwoPhaseBlockNode
 from .sim import SimConfig, run_simulation, survey_estimate
 from .stats import gdp, private_sector_release
 
@@ -32,13 +33,16 @@ def money(cents: float) -> str:
 # A tiny hand-built network used by the contract and attack experiments
 # --------------------------------------------------------------------------- #
 class MiniWorld:
+    default_network: Any = Network          # experiments can be re-run on ledgernet.LedgerNetwork
     NAMES = [("alice", S.HOUSEHOLD, ""), ("bakery", S.FIRM, "services"), ("mill", S.FIRM, "manufacturing"),
              ("treasury", S.GOVERNMENT, ""), ("importer", S.FOREIGN, ""), ("bank-a", S.BANK, ""),
              ("bank-b", S.BANK, ""), ("auditor", S.FIRM, "services")]
 
     def __init__(self, behaviours: Optional[Dict[int, Tuple[str, Optional[str]]]] = None,
                  chain_id: str = "jurisledger-mini", n_validators: int = 4,
-                 behaviour_targets: Optional[Dict[int, Tuple[str, str]]] = None):
+                 behaviour_targets: Optional[Dict[int, Tuple[str, str]]] = None,
+                 network: Any = None, issuers: Tuple[str, ...] = (), policy: Optional[Dict[str, int]] = None,
+                 **network_options: Any):
         self.chain_id = chain_id
         self.w: Dict[str, Wallet] = {n: Wallet(KeyPair.from_seed(f"{chain_id}/{n}"), chain_id)
                                      for n, _, _ in self.NAMES}
@@ -49,10 +53,14 @@ class MiniWorld:
                           "balance": 1_000_000_00} for n, r, s in self.NAMES],
             "validators": [k.address for k in self.vkeys],
         }
+        self.issuers: Dict[str, Wallet] = {n: Wallet(KeyPair.from_seed(f"{chain_id}/issuer/{n}"), chain_id) for n in issuers}
+        if issuers:
+            self.genesis["issuers"] = [{"address": w.address, "name": n} for n, w in self.issuers.items()]
+            self.genesis["policy"] = policy or {}
         behaviours = dict(behaviours or {})
         for i, (b, name) in (behaviour_targets or {}).items():
             behaviours[i] = (b, self.w[name].address)
-        self.net = Network.create(self.genesis, self.vkeys, behaviours)
+        self.net = (network or MiniWorld.default_network).create(self.genesis, self.vkeys, behaviours, **network_options)
 
     @property
     def chain(self) -> Chain:
@@ -606,7 +614,191 @@ def exp_asynchrony(verbose: bool = True, runs: int = 1000) -> Dict[str, Any]:
     return {"checks": checks, "stats": stats}
 
 
+def exp_integration(verbose: bool = True) -> Dict[str, Any]:
+    """The real ledger on two-phase consensus: signed votes, hostile network, lying validator."""
+    import random as _random
+    checks: List[Check] = []
+    adversary = lambda height: bft.make_partition_adversary(first=1, cut=2) if height == 1 else None
+
+    def attacked(two_phase: bool) -> MiniWorld:
+        m = MiniWorld(network=LedgerNetwork, two_phase=two_phase, hold=adversary, heal_after=80)
+        m.net.submit(m.w["alice"].pay(m.w["bakery"].address, 25_00, S.FINAL_CONSUMPTION))
+        m.net.produce_block()
+        return m
+
+    single, double = attacked(False), attacked(True)
+    tips = {n.chain.tip_hash for n in single.net.nodes}
+    both_audit = all(Chain.load(n.chain.export()).height == 1 for n in single.net.nodes)
+    checks.append(("single-phase on the real ledger: two different block 1s, each with a valid certificate, "
+                   "each passing a full audit", len(tips) == 2 and both_audit and single.net.forks == [1]))
+    checks.append(("two-phase, same adversary: one block 1 on every validator",
+                   len({n.chain.tip_hash for n in double.net.nodes}) == 1 and double.net.forks == []))
+    blk = double.chain.blocks[0]
+    checks.append(("the certificate records that the block proposed in round 0 was finalised in a later round",
+                   blk.header.round == 0 and blk.vote_round > 0 and Chain.load(double.chain.export()).height == 1))
+
+    MiniWorld.default_network = LedgerNetwork
+    try:
+        reruns = {f.__name__: f(verbose=False)["checks"] for f in (exp_contracts, exp_legal, exp_disputes, exp_attacks)}
+    finally:
+        MiniWorld.default_network = Network
+    total = sum(len(c) for c in reruns.values())
+    checks.append((f"all {total} contract, legal, dispute and attack claims also hold on the two-phase network",
+                   all(ok for c in reruns.values() for _, ok in c)))
+
+    # a forged consensus vote is dropped
+    m = MiniWorld(network=LedgerNetwork)
+    addresses = m.genesis["validators"]
+    node = TwoPhaseBlockNode(0, 4).attach(m.net.nodes[0], addresses, 1)
+    sim = bft.Sim([node] + [TwoPhaseBlockNode(i, 4).attach(m.net.nodes[i], addresses, 1) for i in (1, 2, 3)])
+    outsider = KeyPair.from_seed("not-a-validator")
+    from .block import consensus_message
+    fake = bft.Msg(bft.PRECOMMIT, 0, "ab" * 32, src=2, dst=0, via=2,
+                   sig=outsider.sign(consensus_message(bft.PRECOMMIT, m.chain_id, 1, 0, "ab" * 32)))
+    node.receive(fake)
+    checks.append(("a vote that claims to be from validator 2 but is signed by someone else is dropped",
+                   node.rejected_messages == 1 and not node.precommits.get(0, {}).get("ab" * 32)))
+
+    # a validator cut off for three blocks catches up from certificates
+    cut_off = lambda height: (lambda msg, sim: 3 in (msg.via, msg.dst)) if height <= 3 else None
+    m = MiniWorld(network=LedgerNetwork, hold=cut_off)
+    for i in range(4):
+        m.send(m.w["alice"].pay(m.w["bakery"].address, 1_00 + i, S.FINAL_CONSUMPTION))
+    checks.append(("a validator cut off for three blocks catches up by verifying each certificate",
+                   m.chain.height == 4 and len({n.chain.state.root() for n in m.net.nodes}) == 1))
+
+    # the whole economy, random delays, one validator lying whenever it proposes
+    rng = _random.Random(11)
+    delay = lambda _msg: rng.randint(1, 3) if rng.random() < 0.8 else rng.randint(4, 25)
+    res = run_simulation(SimConfig(periods=3), behaviours={1: (C.EQUIVOCATOR, None)},
+                         network=LedgerNetwork, delay=delay)
+    honest = [n for n in res.network.nodes if n.behaviour == C.HONEST]
+    liar = res.economy.validator_keys[1].address
+    checks.append(("full economy, random delays, a lying validator: honest validators agree and never fork",
+                   len({n.chain.state.root() for n in honest}) == 1 and res.network.forks == []))
+    checks.append(("...GDP measured from that ledger still equals ground truth to the cent",
+                   gdp(res.chain).expenditure == res.economy.truth.gdp))
+    checks.append(("...and the liar's two signed precommits cost it its seat", liar in res.chain.state.slashed))
+
+    if verbose:
+        print("  partition attack on the real ledger, block 1:")
+        for label, w in (("single-phase", single), ("two-phase   ", double)):
+            print(f"    {label}: " + "  ".join(f"v{i}={n.chain.tip_hash[:8]}" for i, n in enumerate(w.net.nodes)))
+        print(f"    two-phase block: proposed in round {blk.header.round}, finalised in round {blk.vote_round}, "
+              f"{len(blk.votes)} signed precommits")
+        print(f"  claims re-run on the two-phase network: " + ", ".join(f"{k[4:]} {len(v)}" for k, v in reruns.items()))
+        print(f"  economy run: {res.chain.height} blocks, {res.network.ticks} network ticks, "
+              f"validators now {len(res.chain.state.validators)} (1 removed for equivocation)")
+    return {"checks": checks}
+
+
+def exp_identity(verbose: bool = True) -> Dict[str, Any]:
+    """Identity without a single gatekeeper; key rotation; lost-key recovery with a veto window."""
+    policy = {"min_attestations": 2, "unverified_payment_limit": 100_00, "recovery_delay": 3}
+    m = MiniWorld(issuers=("company-registry", "tax-authority", "bank-kyc"), policy=policy)
+    w, iss, st = m.w, m.issuers, (lambda: m.chain.state)
+    alice, bakery, mill = w["alice"], w["bakery"], w["mill"]
+    registry, tax, kyc = iss["company-registry"], iss["tax-authority"], iss["bank-kyc"]
+    checks: List[Check] = []
+
+    def lands(wallet: Wallet, tx: T.Transaction) -> bool:
+        m.send(tx)
+        ok = m.chain.find_tx(tx.txid) is not None
+        wallet.resync(m.chain)
+        return ok
+
+    checks.append(("an unverified account can make small payments but not large ones",
+                   lands(alice, alice.pay(bakery.address, 50_00, S.FINAL_CONSUMPTION))
+                   and not lands(alice, alice.pay(bakery.address, 500_00, S.FINAL_CONSUMPTION))))
+    m.send(registry.attest(alice.address, "passport check #A-1"), tax.attest(alice.address, "taxpayer file #T-9"))
+    checks.append(("two independent issuers vouch for her and the limit lifts",
+                   lands(alice, alice.pay(bakery.address, 500_00, S.FINAL_CONSUMPTION))))
+
+    # Sybil attack: fake firms are free to create and useless
+    fakes = [Wallet(KeyPair.from_seed(f"fake-firm-{i}"), m.chain_id) for i in range(20)]
+    m.send(*[f.register(f"Shell Co {i}", S.FIRM, "services") for i, f in enumerate(fakes)])
+    m.send(*[kyc.attest(f.address, "rubber stamp") for f in fakes])            # one corrupt issuer helps them
+    draft = fakes[0].create_contract("fake supply deal", "text", {}, [fakes[0].address, fakes[1].address])
+    checks.append(("20 fake firms register for free, yet none can sign a contract even with one corrupt issuer's help",
+                   all(f.address in st().accounts for f in fakes) and not lands(fakes[0], draft)
+                   and not any(st().is_verified(f.address) for f in fakes)))
+    impostor = Wallet(KeyPair.from_seed("impostor"), m.chain_id)
+    checks.append(("nobody can declare themselves an issuer, and a non-issuer's attestation is rejected",
+                   not lands(impostor, impostor.register("Ministry of Truth", S.ISSUER))
+                   and not lands(alice, alice.attest(fakes[0].address, "trust me"))))
+
+    m.send(tax.revoke_attestation(alice.address))
+    checks.append(("an issuer can revoke; the account falls back under the limit",
+                   not lands(alice, alice.pay(bakery.address, 500_00, S.FINAL_CONSUMPTION))))
+    m.send(tax.attest(alice.address, "taxpayer file #T-9, re-checked"))
+
+    m.send(registry.attest(bakery.address, "company no. 1001"), kyc.attest(bakery.address, "account opening"),
+           registry.attest(mill.address, "company no. 1002"), tax.attest(mill.address, "taxpayer file #T-12"))
+    verified_before = st().is_verified(bakery.address)
+    vw = [Wallet(k, m.chain_id) for k in m.vkeys]
+    m.send(*[v.make(T.VALIDATOR_VOTE, {"action": "REMOVE_ISSUER", "target": kyc.address}) for v in vw[:3]])
+    checks.append(("validators vote the corrupt issuer out (3 of 4) and its attestations stop counting at once",
+                   verified_before and not st().is_verified(bakery.address) and kyc.address not in st().issuers))
+    m.send(tax.attest(bakery.address, "taxpayer file #T-11"))
+
+    # key rotation keeps contracts, obligations and evidence intact
+    ob = [legal.obligation("rent", bakery.address, mill.address, 300_00, 99)]
+    t = mill.create_contract("Oven lease", LEASE_PROSE, {"obligations": ob}, [mill.address, bakery.address])
+    m.send(t); lease = t.txid
+    m.send(bakery.sign_contract(lease, LEASE_PROSE))
+    old_mill, balance = mill.address, m.balance("mill")
+    new_mill = Wallet(KeyPair.from_seed("mill-new-key"), m.chain_id)
+    m.send(mill.rotate_key(new_mill.address))
+    stale = Wallet(mill.key, m.chain_id); stale.resync(m.chain)
+    checks.append(("after rotation the old key is dead and the new key holds the balance and the contract",
+                   not lands(stale, stale.pay(bakery.address, 1_00, S.INTERMEDIATE))
+                   and st().accounts[new_mill.address]["balance"] == balance
+                   and new_mill.address in st().contracts[lease]["parties"] and st().is_verified(new_mill.address)))
+    m.send(bakery.pay(new_mill.address, 300_00, S.INTERMEDIATE, contract=lease, obligation="rent"))
+    report = legal.verify_evidence_bundle(json.loads(json.dumps(legal.evidence_bundle(m.chain, lease, LEASE_PROSE))),
+                                          m.genesis["validators"])
+    checks.append(("the obligation is paid to the new key and the offline evidence file still verifies as fully signed",
+                   legal.compliance(m.chain, lease)[0]["status"] == "PAID" and report["valid"]
+                   and report["fully_signed"] and report["key_changes"] == {old_mill: new_mill.address}))
+
+    # lost key: two issuers, a waiting period, then the account moves
+    alice_new = Wallet(KeyPair.from_seed("alice-new-phone"), m.chain_id)
+    m.send(registry.request_recovery(alice.address, alice_new.address))
+    one_is_not_enough = st().recoveries[alice.address]["effective_height"] is None
+    m.send(tax.request_recovery(alice.address, alice_new.address))
+    early = not lands(registry, registry.finalize_recovery(alice.address, alice_new.address))
+    funds = m.balance("alice")
+    while m.chain.height < st().recoveries[alice.address]["effective_height"] - 1:
+        m.net.produce_block()
+    m.send(registry.finalize_recovery(alice.address, alice_new.address))
+    checks.append(("a lost key is recovered by two issuers, but only after the waiting period",
+                   one_is_not_enough and early and st().accounts[alice_new.address]["balance"] == funds
+                   and lands(alice_new, alice_new.pay(bakery.address, 10_00, S.FINAL_CONSUMPTION))))
+
+    # hostile recovery: two issuers collude, the owner vetoes
+    thief = Wallet(KeyPair.from_seed("thief"), m.chain_id)
+    m.send(registry.request_recovery(bakery.address, thief.address), tax.request_recovery(bakery.address, thief.address))
+    pending = bakery.address in st().recoveries
+    m.send(bakery.veto_recovery())
+    checks.append(("two colluding issuers try to take over an account; the owner vetoes within the window",
+                   pending and bakery.address not in st().recoveries
+                   and not lands(registry, registry.finalize_recovery(bakery.address, thief.address))
+                   and "successor" not in st().accounts[bakery.address]))
+    checks.append(("an issuer can only recover an account it has itself attested",
+                   not lands(tax, tax.request_recovery(w["auditor"].address, thief.address))))
+
+    if verbose:
+        print(f"  policy: {policy}")
+        print(f"  issuers now: {[st().accounts[a]['name'] for a in st().issuers]}")
+        for name in ("alice", "bakery", "mill"):
+            a = w[name].address
+            cur = st().accounts[a].get("successor", a)
+            print(f"    {name:<7} attestations {st().attestation_count(cur)}  verified {st().is_verified(cur)}"
+                  f"{'  (key replaced at block ' + str(st().accounts[a]['replaced_at']) + ')' if cur != a else ''}")
+    return {"checks": checks}
+
+
 EXPERIMENTS: Dict[str, Callable[..., Dict[str, Any]]] = {
-    "contracts": exp_contracts, "legal": exp_legal, "disputes": exp_disputes, "attacks": exp_attacks, "asynchrony": exp_asynchrony, "gdp": exp_gdp,
+    "contracts": exp_contracts, "legal": exp_legal, "disputes": exp_disputes, "identity": exp_identity, "attacks": exp_attacks, "asynchrony": exp_asynchrony, "integration": exp_integration, "gdp": exp_gdp,
     "fraud": exp_fraud, "privacy": exp_privacy,
 }

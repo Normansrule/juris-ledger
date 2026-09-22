@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .crypto import canonical, hash_obj, merkle_root
 from .tx import Transaction
@@ -42,11 +42,26 @@ def vote_message(chain_id: str, height: int, round_: int, block_hash: str) -> by
     )
 
 
+def consensus_message(kind: str, chain_id: str, height: int, round_: int, value: Optional[str]) -> bytes:
+    """Bytes signed for a consensus message.  Finalising votes (VOTE / PRECOMMIT) use
+    :func:`vote_message`, so a quorum of them IS the block's commit certificate."""
+    if kind in ("VOTE", "PRECOMMIT"):
+        return vote_message(chain_id, height, round_, value or "nil")
+    return b"jurisledger/" + kind.lower().encode() + b"/v1:" + canonical(
+        {"chain_id": chain_id, "height": height, "round": round_, "value": value or "nil"})
+
+
 @dataclass
 class Block:
     header: BlockHeader
     txs: List[Transaction]
     votes: Dict[str, str] = field(default_factory=dict)   # validator address -> signature
+    commit_round: Optional[int] = None                    # round the votes were cast in (None = header.round)
+
+    @property
+    def vote_round(self) -> int:
+        """A block proposed in round 0 may only gather its quorum in a later round."""
+        return self.header.round if self.commit_round is None else self.commit_round
 
     @property
     def hash(self) -> str:
@@ -57,9 +72,9 @@ class Block:
 
     def to_dict(self) -> Dict[str, Any]:
         return {"header": self.header.to_dict(), "txs": [t.to_dict() for t in self.txs],
-                "votes": dict(self.votes)}
+                "votes": dict(self.votes), "commit_round": self.vote_round}
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Block":
         return Block(BlockHeader.from_dict(d["header"]),
-                     [Transaction.from_dict(t) for t in d["txs"]], dict(d["votes"]))
+                     [Transaction.from_dict(t) for t in d["txs"]], dict(d["votes"]), d.get("commit_round"))

@@ -18,7 +18,7 @@ Written by an engineer for discussion with lawyers. **Not legal advice.** Each s
 | Confidentiality | `restricted` contracts: only parties and explicit grantees can obtain a receipt, and the vault serves text only against a receipt | `State.can_read` |
 | Evidence | One file with every relevant transaction, Merkle path and validator certificate, verifiable offline | `legal.evidence_bundle` |
 
-*Press on:* is a signature by a key "the party controls" attributable to the party? That is an identity and key-custody question the prototype does not answer (threat model, item 12).
+*Press on:* is a signature by a key "the party controls" attributable to the party? Version 0.5 gives the structural half of an answer — contract parties must hold attestations from several independent issuers, and key changes are themselves signed, final and included in evidence files — but whether an issuer's check meets the standard the law requires is outside the code (threat model, items 12 and 16).
 
 ## 2. Why electronic form is not the obstacle
 
@@ -38,7 +38,7 @@ Proves, to anyone holding the validators' public keys:
 Does not prove:
 
 - **completeness** — a file can omit a later superseding contract or a payment. Ask a full node, or require the file to be produced by a neutral one;
-- **wall-clock time** — blocks have heights, not timestamps, in version 0.3. A deployment would bind heights to time through validator-signed timestamps;
+- **wall-clock time** — blocks have heights, not timestamps, in this version. A deployment would bind heights to time through validator-signed timestamps;
 - **who was holding the key**, or that they had capacity and authority;
 - **what the words mean.** The ledger records agreements; interpretation stays with people.
 

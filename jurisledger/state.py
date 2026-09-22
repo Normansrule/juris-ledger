@@ -26,9 +26,10 @@ class InvalidTx(Exception):
 # Economic vocabulary (kept deliberately close to the System of National
 # Accounts 2008 so that statistics can be computed straight from the ledger).
 # --------------------------------------------------------------------------- #
-HOUSEHOLD, FIRM, GOVERNMENT, FOREIGN, BANK, VALIDATOR = (
-    "household", "firm", "government", "foreign", "bank", "validator")
-ROLES = {HOUSEHOLD, FIRM, GOVERNMENT, FOREIGN, BANK, VALIDATOR}
+HOUSEHOLD, FIRM, GOVERNMENT, FOREIGN, BANK, VALIDATOR, ISSUER = (
+    "household", "firm", "government", "foreign", "bank", "validator", "issuer")
+ROLES = {HOUSEHOLD, FIRM, GOVERNMENT, FOREIGN, BANK, VALIDATOR, ISSUER}
+INSTITUTIONAL = {GOVERNMENT, VALIDATOR, ISSUER}     # exist only through genesis or governance
 SELF_REGISTER_ROLES = {HOUSEHOLD, FIRM, FOREIGN, BANK}
 
 FINAL_CONSUMPTION = "FINAL_CONSUMPTION"        # household buys goods/services        -> C
@@ -53,7 +54,7 @@ PAYMENT_RULES = {
     WAGES:               ({FIRM, GOVERNMENT, BANK},  {HOUSEHOLD}),
     TAX:                 ({HOUSEHOLD, FIRM, BANK, FOREIGN}, {GOVERNMENT}),
     TRANSFER:            ({GOVERNMENT},              {HOUSEHOLD, FIRM}),
-    FINANCIAL:           (ROLES - {VALIDATOR},       ROLES - {VALIDATOR}),
+    FINANCIAL:           (ROLES - {VALIDATOR, ISSUER}, ROLES - {VALIDATOR, ISSUER}),
 }
 TAX_TYPES = {"production", "income"}
 
@@ -93,6 +94,9 @@ class State:
         self.slashed: List[str] = []
         self.gov_votes: Dict[str, List[str]] = {}
         self.evidence_seen: List[str] = []
+        self.issuers: List[str] = []                       # accredited identity issuers
+        self.policy: Dict[str, int] = {}                   # empty = open network (no identity rules)
+        self.recoveries: Dict[str, Dict[str, Any]] = {}    # subject -> pending lost-key recovery
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -104,6 +108,12 @@ class State:
                 "name": a["name"], "role": a["role"], "sector": a.get("sector", ""),
                 "balance": int(a.get("balance", 0)), "nonce": 0,
             }
+            if a.get("attestations"):
+                s.accounts[a["address"]]["attestations"] = dict(a["attestations"])
+        for i in genesis.get("issuers", []):
+            s.issuers.append(i["address"])
+            s.accounts[i["address"]] = {"name": i["name"], "role": ISSUER, "sector": "", "balance": 0, "nonce": 0}
+        s.policy = {k: int(v) for k, v in genesis.get("policy", {}).items()}
         for v in genesis["validators"]:
             s.validators.append(v)
             s.accounts.setdefault(v, {"name": f"validator-{v[:8]}", "role": VALIDATOR,
@@ -118,6 +128,7 @@ class State:
             "accounts": self.accounts, "contracts": self.contracts, "disputes": self.disputes,
             "validators": self.validators, "slashed": self.slashed,
             "gov_votes": self.gov_votes, "evidence": self.evidence_seen,
+            "issuers": self.issuers, "policy": self.policy, "recoveries": self.recoveries,
             "access_digest": self.access_digest,
         })
 
@@ -137,6 +148,7 @@ class State:
 
         acct = self.accounts.get(tx.sender)
         _need(acct is not None, "sender is not registered")
+        _need("successor" not in acct, "this key was replaced; sign with the account's new key")
         _need(tx.nonce == acct["nonce"], f"bad nonce (expected {acct['nonce']}, got {tx.nonce})")
 
         handler = {
@@ -149,6 +161,12 @@ class State:
             T.DISPUTE_FILE: self._dispute_file,
             T.DISPUTE_WITHDRAW: self._dispute_withdraw,
             T.DISPUTE_AWARD: self._dispute_award,
+            T.ATTEST: self._attest,
+            T.ATTEST_REVOKE: self._attest_revoke,
+            T.KEY_ROTATE: self._key_rotate,
+            T.RECOVERY_REQUEST: self._recovery_request,
+            T.RECOVERY_VETO: self._recovery_veto,
+            T.RECOVERY_FINALIZE: self._recovery_finalize,
             T.EVIDENCE: self._evidence,
             T.VALIDATOR_VOTE: self._validator_vote,
         }[tx.kind]
@@ -190,6 +208,9 @@ class State:
             _need(p.get("tax_type") in TAX_TYPES, "TAX needs tax_type production|income")
         if "invoice" in p:
             _need(_is_hash(p["invoice"]), "invoice must be a SHA-256 hex digest")
+        _need("successor" not in payee, "the recipient's key was replaced; pay the account's new key")
+        if amount > self.policy.get("unverified_payment_limit", amount):
+            self._require_verified(tx.sender, "pay more than the limit for unverified accounts")
         _need(payer["balance"] >= amount, "insufficient balance")
 
         contract = None
@@ -221,6 +242,8 @@ class State:
               "parties must be a non-empty list without duplicates")
         for a in parties:
             _need(a in self.accounts, f"party {str(a)[:12]} is not registered")
+        for a in parties:
+            self._require_verified(a, "be a party to a contract")
         visibility = p.get("visibility", "public")
         _need(visibility in VISIBILITIES, "bad visibility")
         refs = p.get("references", [])
@@ -278,6 +301,7 @@ class State:
         _need(c["status"] == DRAFT, "contract is not open for signature")
         _need(tx.sender in c["parties"], "only a named party may sign")
         _need(tx.sender not in c["signatures"], "already signed")
+        self._require_verified(tx.sender, "sign a contract")
         _need(p.get("prose_hash") == c["prose_hash"],
               "signer must attest to the exact prose hash they are agreeing to")
         c["signatures"][tx.sender] = height
@@ -407,6 +431,96 @@ class State:
         d["award"] = {"outcome": p["outcome"], "award_hash": p["award_hash"], "height": height,
                       "adjusted": sorted(clean)}
 
+    # -- identity: several independent issuers, no single gatekeeper ---- #
+    def attestation_count(self, address: str) -> int:
+        held = self.accounts.get(address, {}).get("attestations", {})
+        return sum(1 for issuer in held if issuer in self.issuers)
+
+    def is_verified(self, address: str) -> bool:
+        need = self.policy.get("min_attestations", 0)
+        acct = self.accounts.get(address)
+        return acct is not None and (need == 0 or acct["role"] in INSTITUTIONAL
+                                     or self.attestation_count(address) >= need)
+
+    def _require_verified(self, address: str, what: str) -> None:
+        _need(self.is_verified(address),
+              f"{self.accounts[address]['name']} needs {self.policy.get('min_attestations', 0)} independent "
+              f"identity attestations to {what} (has {self.attestation_count(address)})")
+
+    def _attest(self, tx: T.Transaction, height: int) -> None:
+        p = tx.payload
+        _need(tx.sender in self.issuers, "only an accredited issuer may attest")
+        subject = self.accounts.get(p.get("subject"))
+        _need(subject is not None and "successor" not in subject, "unknown subject")
+        _need(subject["role"] not in INSTITUTIONAL, "institutional accounts are not attested")
+        _need(_is_hash(p.get("credential_hash")), "credential_hash must be a SHA-256 hex digest")
+        subject.setdefault("attestations", {})[tx.sender] = {"credential_hash": p["credential_hash"], "height": height}
+
+    def _attest_revoke(self, tx: T.Transaction, height: int) -> None:
+        subject = self.accounts.get(tx.payload.get("subject"))
+        _need(subject is not None and tx.sender in subject.get("attestations", {}),
+              "no attestation by this issuer to revoke")
+        del subject["attestations"][tx.sender]
+
+    # -- keys: rotation by the owner, recovery through issuers + waiting period
+    def _migrate(self, old: str, new: str, height: int) -> None:
+        src = self.accounts[old]
+        self.accounts[new] = {**copy.deepcopy(src), "nonce": 0, "previous_key": old}
+        src.update({"balance": 0, "successor": new, "replaced_at": height})
+        src.pop("attestations", None)
+        swap = lambda a: new if a == old else a
+        for c in self.contracts.values():
+            c["parties"] = [swap(a) for a in c["parties"]]
+            c["grantees"] = [swap(a) for a in c["grantees"]]
+            c["signatures"] = {swap(a): h for a, h in c["signatures"].items()}
+            for ob in c["terms"].get("obligations", []):
+                ob["payer"], ob["payee"] = swap(ob["payer"]), swap(ob["payee"])
+            if self.arbitrator_of(c) == old:
+                c["terms"]["arbitration"]["arbitrator"] = new
+        for d in self.disputes.values():
+            d["claimant"] = swap(d["claimant"])
+        self.recoveries.pop(old, None)
+
+    def _check_new_key(self, new: Any) -> None:
+        _need(_is_hash(new), "new_key must be a 32-byte public key in hex")
+        _need(new not in self.accounts, "new_key is already in use")
+
+    def _key_rotate(self, tx: T.Transaction, height: int) -> None:
+        _need(self.accounts[tx.sender]["role"] not in {VALIDATOR, ISSUER},
+              "validators and issuers change keys through governance votes")
+        self._check_new_key(tx.payload.get("new_key"))
+        self._migrate(tx.sender, tx.payload["new_key"], height)
+
+    def _recovery_request(self, tx: T.Transaction, height: int) -> None:
+        p = tx.payload
+        _need(tx.sender in self.issuers, "only an accredited issuer may request a recovery")
+        subject = self.accounts.get(p.get("subject"))
+        _need(subject is not None and "successor" not in subject and subject["role"] not in INSTITUTIONAL,
+              "unknown or ineligible subject")
+        _need(tx.sender in subject.get("attestations", {}), "an issuer may only recover accounts it has attested")
+        self._check_new_key(p.get("new_key"))
+        r = self.recoveries.get(p["subject"])
+        if r is None or r["new_key"] != p["new_key"]:
+            r = self.recoveries[p["subject"]] = {"new_key": p["new_key"], "issuers": [], "effective_height": None}
+        _need(tx.sender not in r["issuers"], "this issuer already requested it")
+        r["issuers"].append(tx.sender)
+        if len(r["issuers"]) >= max(1, self.policy.get("min_attestations", 1)) and r["effective_height"] is None:
+            r["effective_height"] = height + self.policy.get("recovery_delay", 10)
+
+    def _recovery_veto(self, tx: T.Transaction, height: int) -> None:
+        _need(tx.sender in self.recoveries, "there is no pending recovery for this account")
+        del self.recoveries[tx.sender]
+
+    def _recovery_finalize(self, tx: T.Transaction, height: int) -> None:
+        subject = tx.payload.get("subject")
+        r = self.recoveries.get(subject)
+        _need(r is not None and r["effective_height"] is not None, "no approved recovery for this account")
+        _need(tx.payload.get("new_key") == r["new_key"], "new_key does not match the approved recovery")
+        _need(height >= r["effective_height"],
+              f"the waiting period runs until block {r['effective_height']} so the owner can veto")
+        self._check_new_key(r["new_key"])
+        self._migrate(subject, r["new_key"], height)
+
     # -- validator accountability --------------------------------------- #
     def _evidence(self, tx: T.Transaction, height: int) -> None:
         p = tx.payload
@@ -418,27 +532,39 @@ class State:
         except (KeyError, TypeError):
             raise InvalidTx("malformed evidence")
         _need(ha.chain_id == hb.chain_id == self.chain_id, "evidence is for another chain")
-        _need(ha.height == hb.height and ha.round == hb.round, "headers are not for the same height/round")
+        _need(ha.height == hb.height, "headers are not for the same height")
         _need(ha.hash != hb.hash, "headers are identical - no equivocation")
-        _need(verify(v, vote_message(self.chain_id, ha.height, ha.round, ha.hash), sa), "sig_a invalid")
-        _need(verify(v, vote_message(self.chain_id, hb.height, hb.round, hb.hash), sb), "sig_b invalid")
+        # Equivocation = two finalising votes in the SAME voting round.  (Under two-phase
+        # consensus an honest validator may vote for different blocks in different rounds.)
+        vote_round = p.get("round", ha.round)
+        _need(isinstance(vote_round, int) and not isinstance(vote_round, bool) and vote_round >= 0, "bad round")
+        if "round" not in p:
+            _need(ha.round == hb.round, "headers are not for the same round")
+        _need(verify(v, vote_message(self.chain_id, ha.height, vote_round, ha.hash), sa), "sig_a invalid")
+        _need(verify(v, vote_message(self.chain_id, hb.height, vote_round, hb.hash), sb), "sig_b invalid")
         self.validators.remove(v)
         self.slashed.append(v)
-        self.evidence_seen.append(f"{v}:{ha.height}:{ha.round}")
+        self.evidence_seen.append(f"{v}:{ha.height}:{vote_round}")
         self.gov_votes = {}               # validator set changed; pending tallies are void
 
     def _validator_vote(self, tx: T.Transaction, height: int) -> None:
         p = tx.payload
         _need(tx.sender in self.validators, "only validators vote on the validator set")
         action, target = p.get("action"), p.get("target")
-        _need(action in {"ADD", "REMOVE"}, "action must be ADD|REMOVE")
+        _need(action in {"ADD", "REMOVE", "ADD_ISSUER", "REMOVE_ISSUER"},
+              "action must be ADD|REMOVE|ADD_ISSUER|REMOVE_ISSUER")
         _need(isinstance(target, str) and re.match(r"^[0-9a-f]{64}$", target) is not None, "bad target")
         if action == "ADD":
             _need(target not in self.validators, "already a validator")
             _need(target not in self.slashed, "slashed validators cannot return")
-        else:
+        elif action == "REMOVE":
             _need(target in self.validators, "target is not a validator")
             _need(len(self.validators) > 1, "cannot remove the last validator")
+        elif action == "ADD_ISSUER":
+            _need(target not in self.issuers and target not in self.accounts, "issuer key must be new")
+            _need(isinstance(p.get("name"), str) and 0 < len(p["name"]) <= 80, "ADD_ISSUER needs a name")
+        else:
+            _need(target in self.issuers, "target is not an issuer")
         key = f"{action}:{target}"
         voters = self.gov_votes.setdefault(key, [])
         _need(tx.sender not in voters, "already voted")
@@ -449,6 +575,11 @@ class State:
                 self.validators.append(target)
                 self.accounts.setdefault(target, {"name": f"validator-{target[:8]}", "role": VALIDATOR,
                                                   "sector": "", "balance": 0, "nonce": 0})
-            else:
+            elif action == "REMOVE":
                 self.validators.remove(target)
+            elif action == "ADD_ISSUER":
+                self.issuers.append(target)
+                self.accounts[target] = {"name": p["name"], "role": ISSUER, "sector": "", "balance": 0, "nonce": 0}
+            else:
+                self.issuers.remove(target)          # its attestations stop counting at once
             self.gov_votes = {}

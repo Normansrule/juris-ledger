@@ -4,9 +4,9 @@
 
 ```mermaid
 flowchart TB
-    E["experiments.py / sim.py<br/>hypotheses, synthetic economy, attackers"]
-    U["legal.py · contracts.py · fraud.py · stats.py · privacy.py<br/>read-only analysis anyone can run"]
-    N["consensus.py · bft.py<br/>validator nodes, voting, accountability, hostile-network model"]
+    E["experiments.py · sim.py · demo.py · bench.py · command line<br/>hypotheses, synthetic economy, attackers, first-contact tools"]
+    U["legal.py · contracts.py · fraud.py · stats.py · privacy.py · dashboard.py<br/>read-only analysis anyone can run"]
+    N["consensus.py · bft.py · ledgernet.py · storage.py<br/>validator nodes, signed two-phase voting, hostile-network model, durable store"]
     C["chain.py<br/>block rules, commit certificates, audit, light-client proofs"]
     S["state.py<br/>deterministic state machine: all transaction rules"]
     B["tx.py · block.py · crypto.py<br/>signatures, hashes, Merkle trees, canonical encoding"]
@@ -35,7 +35,7 @@ A block is accepted by `Chain.add_block` only if:
 3. `tx_root` matches the transactions;
 4. every transaction applies cleanly, in order;
 5. the resulting state digest equals `state_root`;
-6. it carries valid votes from at least `floor(2n/3) + 1` validators of the set in force at the parent block.
+6. it carries valid votes from at least `floor(2n/3) + 1` validators of the set in force at the parent block, all cast in one voting round (`commit_round`, never earlier than the round the block was proposed in).
 
 Rules 1 to 5 are checked by every validator *before voting*. Rule 6 is checked by everyone *before accepting*. `Chain.audit(genesis, blocks)` re-runs all six over an entire history.
 

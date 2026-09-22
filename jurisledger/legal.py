@@ -103,16 +103,37 @@ def _relates(t: Transaction, cid: str) -> bool:
         r.get("kind") == "contract" and r.get("id") == cid for r in p.get("references", []))
 
 
+def _key_change(t: Transaction) -> Optional[tuple]:
+    if t.kind == T.KEY_ROTATE:
+        return t.sender, t.payload.get("new_key")
+    if t.kind == T.RECOVERY_FINALIZE:
+        return t.payload.get("subject"), t.payload.get("new_key")
+    return None
+
+
 def evidence_bundle(chain: Chain, contract_id: str, prose: Optional[str] = None) -> Dict[str, Any]:
     if contract_id not in chain.state.contracts:
         raise KeyError("unknown contract")
-    items = []
+    items, changes = [], []
     for block in chain.blocks:
         for t in block.txs:
             if _relates(t, contract_id):
                 items.append({"tx": t.to_dict(), "inclusion": chain.tx_proof(t.txid)})
+            elif _key_change(t):
+                changes.append(t)
+    # key changes of the parties (followed transitively), so signatures by a replaced key still make sense
+    create = next(Transaction.from_dict(i["tx"]) for i in items if i["tx"]["kind"] == T.CONTRACT_CREATE
+                  and Transaction.from_dict(i["tx"]).txid == contract_id)
+    keys, key_changes = set(create.payload["parties"]), []
+    for t in changes:                                  # chain order, so chains of rotations resolve
+        old, new = _key_change(t)
+        if old in keys:
+            keys.add(new)
+            key_changes.append({"tx": t.to_dict(), "inclusion": chain.tx_proof(t.txid)})
+    labels = {a: chain.state.accounts[a]["name"] for i in items for a in [i["tx"]["sender"]]}
     return {"format": BUNDLE_FORMAT, "chain_id": chain.chain_id, "contract_id": contract_id,
-            "prose": prose, "items": items}
+            "prose": prose, "items": items, "key_changes": key_changes,
+            "labels": labels}     # names are a convenience for the reader and are NOT proven by the file
 
 
 def verify_evidence_bundle(bundle: Dict[str, Any], validators: List[str]) -> Dict[str, Any]:
@@ -146,19 +167,39 @@ def verify_evidence_bundle(bundle: Dict[str, Any], validators: List[str]) -> Dic
                                     if k in ("action", "context", "amount", "obligation", "obligations", "grantee",
                                              "title", "note", "outcome", "adjustments")}})
 
+    successor: Dict[str, str] = {}
+    for i, item in enumerate(bundle.get("key_changes", [])):
+        try:
+            t = Transaction.from_dict(item["tx"])
+            change = _key_change(t)
+            if change is None or not t.signature_valid() or not Chain.verify_tx_proof(t.txid, item["inclusion"], validators):
+                problems.append(f"key change {i}: not a proven, final key change")
+            else:
+                successor[change[0]] = change[1]
+        except (KeyError, TypeError):
+            problems.append(f"key change {i}: malformed")
+
+    def current(key: str) -> str:
+        hops = 0
+        while key in successor and hops < 100:
+            key, hops = successor[key], hops + 1
+        return key
+
     report: Dict[str, Any] = {"contract_id": cid, "timeline": sorted(timeline, key=lambda e: e["height"] or 0)}
     if create is None:
         problems.append("the bundle does not contain the contract's creating transaction")
     else:
         p = create.payload
-        signed = {create.sender} if create.sender in p["parties"] else set()
+        parties = {current(a) for a in p["parties"]}
+        signed = {current(create.sender)} if current(create.sender) in parties else set()
         for item in bundle["items"]:
             t = Transaction.from_dict(item["tx"])
             if (t.kind == T.CONTRACT_SIGN and t.payload.get("contract_id") == cid
-                    and t.payload.get("prose_hash") == p["prose_hash"] and t.sender in p["parties"]):
-                signed.add(t.sender)
+                    and t.payload.get("prose_hash") == p["prose_hash"] and current(t.sender) in parties):
+                signed.add(current(t.sender))
         report.update({"title": p["title"], "parties": p["parties"], "signed_by": sorted(signed),
-                       "fully_signed": signed == set(p["parties"]), "prose_hash": p["prose_hash"],
+                       "fully_signed": signed == parties, "prose_hash": p["prose_hash"],
+                       "key_changes": dict(successor),
                        "references": p.get("references", [])})
         if bundle.get("prose") is not None:
             report["prose_matches"] = prose_hash(bundle["prose"]) == p["prose_hash"]

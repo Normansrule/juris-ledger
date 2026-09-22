@@ -79,7 +79,9 @@ class Chain:
     def check_certificate(self, block: Block, validators: List[str]) -> int:
         """Rule 6.  Returns the number of valid votes; raises if below quorum."""
         h = block.header
-        msg = vote_message(self.chain_id, h.height, h.round, block.hash)
+        if block.vote_round < h.round:
+            raise InvalidBlock("votes cannot predate the proposal")
+        msg = vote_message(self.chain_id, h.height, block.vote_round, block.hash)
         good = sum(1 for v, sig in block.votes.items() if v in validators and verify(v, msg, sig))
         need = quorum(len(validators))
         if good < need:
@@ -128,14 +130,14 @@ class Chain:
             raise KeyError("transaction not found")
         height, idx = loc
         b = self.blocks[height - 1]
-        return {"header": b.header.to_dict(), "votes": dict(b.votes),
+        return {"header": b.header.to_dict(), "votes": dict(b.votes), "commit_round": b.vote_round,
                 "proof": merkle_proof([t.txid for t in b.txs], idx)}
 
     @staticmethod
     def verify_tx_proof(txid: str, proof: Dict[str, Any], validators: List[str]) -> bool:
         """Light-client check: header has a quorum certificate AND tx is under its Merkle root."""
         header = BlockHeader.from_dict(proof["header"])
-        msg = vote_message(header.chain_id, header.height, header.round, header.hash)
+        msg = vote_message(header.chain_id, header.height, proof.get("commit_round", header.round), header.hash)
         good = sum(1 for v, s in proof["votes"].items() if v in validators and verify(v, msg, s))
         if good < quorum(len(validators)):
             return False

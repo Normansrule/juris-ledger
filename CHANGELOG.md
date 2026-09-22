@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 — security, usability and viability for public-sector use
+- **Security.** `ledgernet.py`: the real chain runs on signed two-phase consensus; certificates record their voting round; equivocation evidence is per voting round; finality announcements are verified, never trusted. All earlier claims re-run on it. Identity from *k* independent issuers (`ATTEST`, `ATTEST_REVOKE`, issuer governance), capped unverified accounts, verified contract parties. `KEY_ROTATE` and issuer-assisted recovery with an owner veto window; contracts, obligations and evidence files follow key changes.
+- **Usability.** `jurisledger demo`, `audit`, `verify`, `register`, `bench`; a self-contained browsable public register; plain-language verdicts and error messages; readable labels in evidence files.
+- **Viability.** `storage.py` durable block store that re-audits on open and survives torn writes; honest benchmark; `docs/GOVERNMENT.md` blueprint.
+- New experiments `identity` (11 claims) and `integration` (9 claims). Totals: 10 experiments, 90 claims, 119 tests.
+
 ## 0.4.0
 - `bft.py`: message-level consensus laboratory. Single-phase voting forks under a delaying adversary with four honest validators; Tendermint-style two-phase voting with locks survives the same adversary and 1,000 random schedules with a lying validator. Two colluders of four fork it, and are provably guilty.
 - New experiment `asynchrony` (8 claims) and `tests/test_bft.py`. Totals: 8 experiments, 70 claims, 109 tests.

@@ -184,10 +184,12 @@ class SimResult:
 
 
 def run_simulation(cfg: Optional[SimConfig] = None,
-                   behaviours: Optional[Dict[int, Tuple[str, Optional[str]]]] = None) -> SimResult:
+                   behaviours: Optional[Dict[int, Tuple[str, Optional[str]]]] = None,
+                   network: Any = None, **network_options: Any) -> SimResult:
+    """``network`` is a class with a ``create`` method: consensus.Network (default) or ledgernet.LedgerNetwork."""
     cfg = cfg or SimConfig()
     eco = Economy(cfg)
-    net = Network.create(eco.genesis(), eco.validator_keys, behaviours)
+    net = (network or Network).create(eco.genesis(), eco.validator_keys, behaviours, **network_options)
     spans = []
     for _ in range(cfg.periods):
         first = net.reference.chain.height + 1

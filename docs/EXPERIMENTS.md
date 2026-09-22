@@ -42,6 +42,16 @@ Each experiment is a function in [`jurisledger/experiments.py`](../jurisledger/e
 
 **Does not show.** Enforcement against a debtor who ignores the award (by design that is a court's job), or appeals and challenges to the arbitrator.
 
+## 2d. `identity` — identity without a gatekeeper, and keys that can be lost
+
+**Hypothesis.** A public ledger can resist fake identities without a single registrar, and let people lose keys without losing accounts, while giving no issuer the power to seize an account.
+
+**Method.** Three issuers, policy "two independent attestations; unverified accounts capped at 100.00; recovery waits 3 blocks". Twenty fake firms helped by one corrupt issuer; an impostor issuer; revocation; validators voting an issuer out; a party rotating its key in the middle of a contract; a genuine lost-key recovery; a hostile recovery by two colluding issuers.
+
+**Result.** Eleven claims pass. The fake firms register but cannot sign or exceed the cap. Removing the corrupt issuer un-verifies everyone who depended on it, at once. After rotation the old key is dead, the contract and its obligation follow the new key, and the offline evidence file still reports "fully signed" by following the proven key change. Recovery works only after the waiting period; the hostile attempt is vetoed by the owner.
+
+**Does not show.** That issuers verify people properly, or what happens when *k* issuers collude against someone who is not watching.
+
 ## 3. `attacks` — what each adversary achieves
 
 Fourteen claims, lettered in the source: (a) history tampering, (b) forged payment by a proposer, (c, d) replay, double spend, cross-network replay, (e) role abuse of statistics tags, (f) equivocation and removal, (g) censorship delay, (h) one and two crash faults out of four, (i) minority finalisation, (j) light-client inclusion proof.
@@ -57,6 +67,16 @@ Fourteen claims, lettered in the source: (a) history tampering, (b) forged payme
 **Result.** Single-phase: validator 0 finalises block A, the other three finalise block B — a fork with no dishonest participant. Two-phase: validators 2 and 3 lock on A in round 0, refuse validator 1's block B in round 1, and everyone finalises A in round 2. Random schedules: single-phase forks in 12 of 1,000; two-phase forks in none and always finalises. Two colluders: two-phase forks, and both honest validators can prove which two validators signed conflicting votes.
 
 **Does not show.** A real network stack, or the two-phase protocol driving the actual chain (values here are opaque identifiers). Timers are simplified; the liveness numbers mean "terminates in this model", not a performance claim.
+
+## 3c. `integration` — the real ledger on two-phase consensus
+
+**Hypothesis.** The protocol proven on placeholders in `asynchrony` can carry real blocks without weakening any earlier claim.
+
+**Method.** `ledgernet.py`: proposals carry blocks; validators prevote only for blocks that execute cleanly; every message is signed; the quorum of signed precommits is stored as the certificate together with the round it was cast in. The partition adversary is pointed at block 1 of a real ledger under both protocols. Then all 48 contract, legal, dispute and attack claims are re-run on the new network, a forged vote is injected, a validator is cut off for three blocks, and the full synthetic economy runs under random delays with a validator that equivocates whenever it proposes.
+
+**Result.** Nine claims pass. Under single-phase voting two different block 1s exist, each with a valid certificate, each passing a full audit — the failure is invisible to anyone holding only one of them. Under two-phase voting there is one block 1, proposed in round 0 and finalised in round 2. All 48 earlier claims hold. The forged vote is dropped; the cut-off validator catches up by verifying certificates; the economy's GDP still equals ground truth to the cent and the equivocating validator loses its seat.
+
+**Does not show.** Behaviour over real sockets, or any latency figure.
 
 ## 4. `fraud` — four injected frauds
 
@@ -84,7 +104,7 @@ Each is a candidate experiment: state the claim, write the attack, keep the resu
 0. **Awards that increase a debt, safely.** Damages, interest and costs up to a cap the parties pre-agree in the contract; three-member tribunals deciding by majority; a challenge procedure for a conflicted arbitrator.
 1. **Counter-signed purposes.** Require the payee to co-sign the purpose tag. Does it cut plausible mis-tagging, and what does it cost in friction?
 2. **Validator composition.** Simulate validator sets drawn from interest groups (state, banks, civil society). Which seat allocations keep every single interest under one third?
-3. **Integrate two-phase voting.** Drive `chain.py` blocks through `bft.py`'s protocol so the ledger itself, not just a model, survives the partition attack; then add validator-signed timestamps.
+3. **Real transport.** Run each validator as a process talking over authenticated sockets; add validator-signed timestamps; measure latency honestly.
 4. **Threshold-encrypted vault.** Prose encrypted; decryption shares released by validators only against a finalised receipt.
 5. **Range proofs.** Add Bulletproofs so committed amounts are provably non-negative, then compute GDP over commitments.
 6. **Selective disclosure for audits.** A firm proves to an auditor that its committed payments sum to its declared revenue without opening them.

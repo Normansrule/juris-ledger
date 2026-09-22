@@ -25,12 +25,19 @@ DISPUTE_OPEN = "DISPUTE_OPEN"          # a party files a claim under the contrac
 DISPUTE_FILE = "DISPUTE_FILE"          # a party or the arbitrator files a document (by hash)
 DISPUTE_WITHDRAW = "DISPUTE_WITHDRAW"  # the claimant withdraws
 DISPUTE_AWARD = "DISPUTE_AWARD"        # the named arbitrator decides, within narrow limits
+ATTEST = "ATTEST"                      # an accredited issuer vouches for an account (credential by hash)
+ATTEST_REVOKE = "ATTEST_REVOKE"        # the issuer withdraws it
+KEY_ROTATE = "KEY_ROTATE"              # the owner moves the account to a new key
+RECOVERY_REQUEST = "RECOVERY_REQUEST"  # an issuer asks to move a lost-key account to a new key
+RECOVERY_VETO = "RECOVERY_VETO"        # the current key cancels a pending recovery
+RECOVERY_FINALIZE = "RECOVERY_FINALIZE"  # anyone completes a recovery once the waiting period is over
 EVIDENCE = "EVIDENCE"                  # proof that a validator signed two blocks at one height
 VALIDATOR_VOTE = "VALIDATOR_VOTE"      # validators vote to add / remove a validator
 
 KINDS = {
     REGISTER, PAYMENT, CONTRACT_CREATE, CONTRACT_SIGN, CONTRACT_ACCESS,
     CONTRACT_GRANT, DISPUTE_OPEN, DISPUTE_FILE, DISPUTE_WITHDRAW, DISPUTE_AWARD,
+    ATTEST, ATTEST_REVOKE, KEY_ROTATE, RECOVERY_REQUEST, RECOVERY_VETO, RECOVERY_FINALIZE,
     EVIDENCE, VALIDATOR_VOTE,
 }
 

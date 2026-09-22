@@ -30,18 +30,22 @@
 | 9 | Household or firm mis-tags a payment to distort statistics | Role/purpose matrix rejects impossible tags; production and expenditure totals must reconcile | Plausible lies within allowed tags (consumption declared as investment). Needs audits, as today |
 | 10 | Contract host alters text or serves it secretly | Hash mismatch is detected by any reader; the vault interface requires a finalised receipt | A host can leak text out-of-band. Cryptographic fix: encrypt prose, release keys by threshold of validators on receipt (roadmap) |
 | 11 | Non-party reads a restricted contract | `CONTRACT_ACCESS` rejected on-chain, so no receipt exists | Parties can always share text themselves |
-| 12 | Fake identities flood the ledger (Sybil attack) | Government and validator roles cannot be self-registered | **Not solved.** Needs credential attestations from several independent issuers |
+| 12 | Fake identities flood the ledger (Sybil attack) | Registration is free but nearly useless: payments above a cap and all contracts need attestations from *k* independent issuers; government, validator and issuer roles cannot be self-registered; issuers can revoke; validators can vote an issuer out and its attestations stop counting at once | *k* colluding or careless issuers. The ledger cannot check that an issuer checked a passport |
 | 13 | Analyst de-anonymises participants from public payments | Experimental commitments and differentially private releases | **Not solved.** Amounts and counterparties are public in this version |
 | 14 | Someone accuses an honest validator with fabricated evidence | Evidence must contain two *valid* signatures by the accused over *different* headers at the same height and round | None |
 
 | 15 | The arbitrator named in a contract abuses its role | It can act only on an open dispute raised by a party, once, only on obligations in dispute, and only to reduce, postpone or waive; it cannot move money; every read and decision is signed and on record | A corrupt arbitrator can wrongly waive a genuine debt. Remedy is outside the ledger: challenge the award in court, using the evidence file |
 
+| 16 | Key theft or loss | Owner rotates the key at once (`KEY_ROTATE`); a lost key is recovered by the issuers that attested the account, after a waiting period during which the current key can veto; contracts, obligations and evidence files follow the new key; the old key can never sign again | A thief who acts before the owner rotates. *k* colluding issuers against an owner who does not look for the whole veto window |
+| 17 | A forged or unsigned consensus vote | Every proposal, prevote and precommit is signed and verified on receipt; announcements of finality are accepted only with a verifiable certificate | None within assumptions |
+| 18 | The block file is edited on disk, or power fails mid-write | The store re-audits every block when opened; a torn final line is detected and cut off; a block is acknowledged only after it is flushed to disk | Loss of the whole disk: keep replicas (every validator is one) |
+
 ## Known gaps
 
-- **Single-phase voting in the chain's `Network`.** `bft.py` now demonstrates the failure (a fork with four honest validators under a delaying adversary) and the repair (prevote, precommit and locking: no fork in the scripted attack or in 1,000 random schedules with one lying validator). The repaired protocol is not yet the one driving `chain.py`; until it is, the prototype's chain is safe only on its synchronous simulated network. Validity and accountability rules are unaffected.
+- **Simulated transport.** The real chain now runs on signed two-phase consensus (`ledgernet.py`) and passes the partition attack and every earlier claim, but messages travel through an in-process simulator. Sockets, peer authentication and denial-of-service protection do not exist yet. The original single-phase `consensus.Network` is kept as the baseline that the `integration` experiment shows forking.
 - **The one-third bound is a hard limit.** Two colluding validators out of four fork even the two-phase protocol. What remains is accountability: the conflicting signatures are evidence. Choosing validators so that no single interest controls a third of the seats is therefore a governance requirement, not a detail.
 - **No fees or rate limits.** Spam resistance is out of scope.
-- **No key rotation or recovery.**
+- **Validator and issuer keys** change only through governance votes (remove the old key, add the new); there is no in-place rotation for them.
 - **Long-range history rewriting by retired validators** is not addressed; standard mitigations are checkpoints and unbonding periods.
 
 ## Why "limited action" is the core idea

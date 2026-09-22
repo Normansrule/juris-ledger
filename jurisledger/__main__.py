@@ -1,37 +1,139 @@
-"""Command-line entry point:  python -m jurisledger [all|contracts|legal|disputes|attacks|asynchrony|gdp|fraud|privacy]"""
+"""JurisLedger command line.
+
+  jurisledger demo [--out DIR]            build a sample ledger, evidence file and browsable register
+  jurisledger audit CHAIN.json            re-verify a whole ledger from its founding record
+  jurisledger verify EVIDENCE.json VALIDATORS.json
+                                          check one contract's evidence file offline
+  jurisledger register CHAIN.json [-o FILE.html]
+                                          render the browsable public register
+  jurisledger bench                       performance of this prototype on this machine
+  jurisledger all | NAME                  run every experiment, or one of:
+      contracts legal disputes identity attacks asynchrony integration gdp fraud privacy
+"""
 from __future__ import annotations
 
+import argparse
+import json
 import sys
+from pathlib import Path
 
+from .chain import Chain, InvalidBlock
 from .experiments import EXPERIMENTS
 
 TITLES = {
-    "asynchrony": "Consensus on a hostile network: single-phase versus two-phase voting",
-    "gdp": "Gross Domestic Product (GDP) measured from the ledger",
     "contracts": "Signed digital contracts with references and an access trail",
     "legal": "Obligations, compliance and court-ready evidence files",
     "disputes": "Disputes and arbitration with deliberately narrow powers",
+    "identity": "Identity without a gatekeeper, key rotation and lost-key recovery",
     "attacks": "Adversarial experiments",
+    "asynchrony": "Consensus on a hostile network: single-phase versus two-phase voting",
+    "integration": "The real ledger on signed two-phase consensus",
+    "gdp": "Gross Domestic Product (GDP) measured from the ledger",
     "fraud": "Fraud detection on a shared ledger",
     "privacy": "Confidential amounts and private statistics (experimental)",
 }
 
 
-def main(argv: list[str]) -> int:
-    which = argv[1] if len(argv) > 1 else "all"
-    names = list(EXPERIMENTS) if which == "all" else [which]
-    if any(n not in EXPERIMENTS for n in names):
-        print(__doc__)
-        return 2
+def run_experiments(names: list[str]) -> int:
     failed = 0
     for n in names:
         print(f"\n=== {TITLES[n]} ===")
-        result = EXPERIMENTS[n](verbose=True)
-        for claim, ok in result["checks"]:
+        for claim, ok in EXPERIMENTS[n](verbose=True)["checks"]:
             print(f"  [{'PASS' if ok else 'FAIL'}] {claim}")
             failed += not ok
     print(f"\n{'ALL CHECKS PASSED' if not failed else str(failed) + ' CHECK(S) FAILED'}")
     return 1 if failed else 0
+
+
+def cmd_audit(path: str) -> int:
+    try:
+        chain = Chain.load(Path(path).read_text())
+    except InvalidBlock as err:
+        print(f"REJECTED. The ledger in {path} does not verify: {err}")
+        return 1
+    except (OSError, ValueError, KeyError) as err:
+        print(f"Could not read {path} as a ledger export: {err}")
+        return 2
+    n_tx = sum(len(b.txs) for b in chain.blocks)
+    print(f"VERIFIED. {chain.height} blocks and {n_tx:,} transactions replayed from the founding record of "
+          f"'{chain.chain_id}'.\nEvery signature, Merkle root, state digest and commit certificate checked.\n"
+          f"State digest: {chain.state.root()}")
+    return 0
+
+
+def cmd_verify(evidence_path: str, validators_path: str) -> int:
+    from .legal import verify_evidence_bundle
+    try:
+        bundle = json.loads(Path(evidence_path).read_text())
+        trusted = json.loads(Path(validators_path).read_text())
+        validators = trusted["validators"] if isinstance(trusted, dict) else trusted
+    except (OSError, ValueError, KeyError) as err:
+        print(f"Could not read the files: {err}")
+        return 2
+    report = verify_evidence_bundle(bundle, validators)
+    if not report["valid"]:
+        print("REJECTED. Do not rely on this file.")
+        for p in report["problems"]:
+            print(f"  - {p}")
+        return 1
+    print(f"VERIFIED against {len(validators)} validator keys you supplied.\n")
+    print(f"  Contract      {report['title']}")
+    print(f"  Parties       {len(report['parties'])}; all signed the same text: {'yes' if report['fully_signed'] else 'NO'}")
+    if "prose_matches" in report:
+        print(f"  Enclosed text {'is exactly the text that was signed' if report['prose_matches'] else 'DOES NOT MATCH'}")
+    if report.get("key_changes"):
+        print(f"  Key changes   {len(report['key_changes'])} party key(s) were replaced; signatures follow the new keys")
+    labels = bundle.get("labels", {})
+    print("\n  What happened, in order (names are labels from the file, keys are what is proven):")
+    for ev in report["timeline"]:
+        detail = ", ".join(f"{k}={v}" for k, v in ev["detail"].items() if k != "adjustments")
+        print(f"    block {ev['height']:>3}  {ev['kind'].replace('_', ' ').lower():<18} by {labels.get(ev['by'], '?')[:22]:<22} {ev['by'][:8]}…  {detail}")
+    print("\n  This proves what is in the file. It cannot prove that nothing was left out; "
+          "for that, ask a full node.")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="jurisledger", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("command", nargs="?", default="all")
+    ap.add_argument("paths", nargs="*")
+    ap.add_argument("-o", "--out", default=None)
+    args = ap.parse_args(argv[1:])
+    cmd = args.command
+
+    if cmd == "all" or cmd in EXPERIMENTS:
+        return run_experiments(list(EXPERIMENTS) if cmd == "all" else [cmd])
+    if cmd == "demo":
+        from .demo import build
+        out = args.out or "demo"
+        made = build(out)
+        print(f"Built a {made['blocks']}-block sample ledger in {out}/\n"
+              f"  open      {made['register']}   (in a browser)\n"
+              f"  then try  jurisledger audit {made['chain']}\n"
+              f"            jurisledger verify {made['evidence']} {made['validators']}")
+        return 0
+    if cmd == "audit" and len(args.paths) == 1:
+        return cmd_audit(args.paths[0])
+    if cmd == "verify" and len(args.paths) == 2:
+        return cmd_verify(*args.paths)
+    if cmd == "register" and len(args.paths) == 1:
+        from .dashboard import render
+        try:
+            chain = Chain.load(Path(args.paths[0]).read_text())
+        except InvalidBlock as err:
+            print(f"REJECTED. Refusing to render a ledger that does not verify: {err}")
+            return 1
+        out = args.out or "register.html"
+        Path(out).write_text(render(chain))
+        print(f"Wrote {out}")
+        return 0
+    if cmd == "bench":
+        from .bench import run
+        run()
+        return 0
+    ap.print_help()
+    return 2
 
 
 def main_cli() -> None:          # console-script entry point
