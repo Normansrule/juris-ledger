@@ -23,7 +23,14 @@ from .net import Client, free_ports
 
 
 def write_cluster_files(out: Path, n: int, chain_id: str = "cluster-local") -> Dict[str, Any]:
+    """A fresh ledger every run: keys and genesis are regenerated, so stores from an earlier run
+    (which belong to a different founding record) are removed first."""
+    import shutil
     out.mkdir(parents=True, exist_ok=True)
+    for old in out.glob("store-*"):
+        shutil.rmtree(old, ignore_errors=True)
+    for old in out.glob("validator-*.log"):
+        old.unlink()
     keys = [KeyPair.generate() for _ in range(n)]
     ports = free_ports(n)
     people = {name: Wallet(KeyPair.generate(), chain_id) for name in ("ana", "cafe", "roaster", "city")}
@@ -76,6 +83,11 @@ def run(out_dir: str, n: int = 4, log: Any = print) -> Dict[str, Any]:
         st = wait_height(clients[0], 1, 30)
         result["first_block"] = st.get("height", 0) >= 1
         log(f"  block 1 finalised: {result['first_block']}")
+        if not result["first_block"]:
+            dead = [i for i, p in enumerate(procs) if p.poll() is not None]
+            log(f"  no block after 30 s; validators that exited: {dead}. See {out}/validator-*.log")
+            result["ok"] = False
+            return result
 
         txs = [people["ana"].pay(people["cafe"].address, 4_50, S.FINAL_CONSUMPTION),
                people["cafe"].pay(people["roaster"].address, 720_00, S.INTERMEDIATE),

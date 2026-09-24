@@ -11,6 +11,8 @@
   jurisledger node --genesis G --key K --peers P --store DIR --index I [--listen HOST:PORT]
                                           run one validator (a process per machine in a deployment)
   jurisledger keygen [-o FILE]            make a validator or wallet key file
+  jurisledger status HOST:PORT            height, state digest and mempool of a running validator
+  jurisledger export HOST:PORT [-o FILE]  download and re-audit a running validator's ledger
   jurisledger all | NAME                  run every experiment, or one of:
       contracts legal disputes identity attacks asynchrony integration gdp fraud privacy
 """
@@ -156,6 +158,23 @@ def main(argv: list[str]) -> int:
         print(f"validator {args.index} listening on {listen[0]}:{listen[1]}", flush=True)
         serve(key, genesis, peers, args.store, listen, until_height=args.until,
               log=lambda m: print(m, flush=True))
+        return 0
+    if cmd in ("status", "export") and len(args.paths) == 1:
+        from .net import Client
+        host, port = args.paths[0].rsplit(":", 1)
+        client = Client(host, int(port))
+        try:
+            if cmd == "status":
+                st = client.status()
+                print(f"validator {st.get('index')}  height {st.get('height')}  mempool {st.get('mempool')}\n"
+                      f"state digest {st.get('root')}\nvalidators: {len(st.get('validators', []))}")
+            else:
+                chain = client.export()
+                out = args.out or "chain.json"
+                Path(out).write_text(chain.export())
+                print(f"downloaded and re-audited {chain.height} blocks from {args.paths[0]}; wrote {out}")
+        except OSError as err:
+            print(f"could not reach {args.paths[0]}: {err}"); return 1
         return 0
     if cmd == "keygen":
         from .crypto import KeyPair

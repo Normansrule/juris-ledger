@@ -31,3 +31,19 @@ def test_msg_wire_roundtrip_with_block():
 def test_four_process_cluster_survives_a_crash(tmp_path):
     result = run(str(tmp_path / "cluster"), n=4, log=lambda *_: None)
     assert result.get("ok"), result
+
+
+def test_store_from_another_ledger_is_refused(tmp_path):
+    from jurisledger.experiments import MiniWorld
+    from jurisledger.storage import BlockStore
+    from jurisledger.net import Validator
+    a, b = MiniWorld(chain_id="ledger-a"), MiniWorld(chain_id="ledger-b")
+    store = BlockStore.create(tmp_path / "s", a.genesis)
+    with pytest.raises(SystemExit):
+        Validator(b.vkeys[0], b.genesis, [("127.0.0.1", 1)] * 4, store, ("127.0.0.1", 0), log=lambda *_: None)
+
+
+def test_cluster_can_be_rerun_in_the_same_directory(tmp_path):
+    out = tmp_path / "c"
+    assert run(str(out), n=4, log=lambda *_: None).get("ok")
+    assert run(str(out), n=4, log=lambda *_: None).get("ok")

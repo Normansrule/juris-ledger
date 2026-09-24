@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+- Fix: `jurisledger cluster` failed when re-run in the same directory — new keys and genesis were generated but stores from the previous run were reused, so validators crashed on start with "prev_hash does not match". Stale stores and logs are now removed, and a validator refuses to start on a store whose founding record does not match its genesis, with a message saying what to do.
+- The cluster reports which validators exited if no block appears.
+- New client commands `jurisledger status HOST:PORT` and `jurisledger export HOST:PORT`.
+
 ## 0.6.0 — real processes, real sockets, real time
 - `net.py`: validators as separate processes over TCP; length-prefixed signed JSON frames; transaction gossip; block catch-up with certificate re-verification; resume from the on-disk store; `Client` for wallets and tools. `cluster.py` and `jurisledger cluster` run four processes, pay, kill one, restart it and check it rejoins. `jurisledger node`, `jurisledger keygen`; key files with the raw Ed25519 seed.
 - Block headers carry a proposer timestamp endorsed by every vote; validators refuse headers more than five minutes from their clock; the chain rejects time running backwards.

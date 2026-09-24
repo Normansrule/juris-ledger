@@ -186,12 +186,16 @@ class Validator:
     def __post_init__(self) -> None:
         self.index = self.genesis["validators"].index(self.key.address)
         self.inner = Node(self.key, self.genesis)
-        try:                                                   # resume from disk
-            recovered = self.store.load()
-            for b in recovered.blocks:
-                self.inner.commit(b)
-        except FileNotFoundError:
-            pass
+        from .crypto import hash_obj
+        if hash_obj(self.store.genesis()) != hash_obj(self.genesis):
+            raise SystemExit(f"the store in {self.store.dir} belongs to a different ledger (its founding record "
+                             f"differs from {self.genesis['chain_id']}). Use an empty --store directory for a new "
+                             f"ledger, or the matching genesis file to resume this one.")
+        recovered = self.store.load()                          # resume from disk; re-audits every block
+        for b in recovered.blocks:
+            self.inner.commit(b)
+        if recovered.height:
+            self.log(f"[v{self.index}] resumed from disk at block {recovered.height}")
         self.transport = Transport(self.index, self.peers, self.inbox)
         self.proto: Optional[TwoPhaseBlockNode] = None
         self.future: Dict[int, List[bft.Msg]] = {}

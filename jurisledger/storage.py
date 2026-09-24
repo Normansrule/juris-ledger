@@ -46,8 +46,11 @@ class BlockStore:
             self.append(b)
         return len(chain.blocks) - have
 
+    def genesis(self) -> Dict[str, Any]:
+        return json.loads(self.genesis_path.read_text())
+
     def load(self) -> Chain:
-        chain = Chain(json.loads(self.genesis_path.read_text()))
+        chain = Chain(self.genesis())
         raw = self.blocks_path.read_bytes()
         good = 0
         for line in raw.splitlines(keepends=True):
