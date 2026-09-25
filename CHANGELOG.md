@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 — the explainer
+- `site/index.html`: a self-contained interactive explainer that walks the life of one transaction in seven steps — finality stepper, the partition attack against both voting protocols, a contract whose fingerprint reacts to edits, k-of-n identity with a corrupt issuer, 32-bit range-proof decomposition that refuses negatives, GDP against off-ledger cash, and a fraud ring with a detector. No external scripts, fonts or requests; dark mode and reduced motion respected.
+- GitHub Pages workflow publishes it; README redesigned around it with an animated banner.
+
+## 0.10.0 — deployment and governance
+- `jurisledger init`: prepares a multi-machine network — shared genesis and peers, one folder per machine holding only its own key and a `start.sh`, issuer and treasury keys kept aside. `docs/DEPLOY.md` covers operations and a two-machine exercise.
+- `VALIDATOR_VOTE` with `SET_POLICY`: the identity threshold, unverified payment cap and recovery delay change only by validator quorum, effective at once and recorded forever.
+- 137 tests.
+
 ## 0.9.0 — snapshots, encrypted notes, a wallet
 - Certified state snapshots: `Chain.make_snapshot` / `Chain.from_snapshot`, `jurisledger snapshot`; the certificate is checked against trusted validators and the state against the certified `state_root`; the access log is verified against its digest. A chain started from a snapshot keeps accepting blocks and exports normally.
 - Confidential payments carry the recipient's opening encrypted (ECIES over the account's Ed25519 key, AES-256-GCM); `ConfidentialWallet.scan` recovers incoming payments from the chain.

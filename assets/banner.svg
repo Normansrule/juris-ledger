@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="JurisLedger: a ledger nobody owns and anybody can check">
+  <style>
+    .ink{fill:#0F1F3D}.sheet{fill:#fff}.rule{stroke:#0F1F3D;stroke-width:1.6;fill:none}
+    .t{font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;fill:#0F1F3D}
+    .s{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;fill:#41506B}
+    .blk{opacity:0;animation:appear 9s linear infinite}
+    .blk:nth-child(1){animation-delay:0s}.blk:nth-child(2){animation-delay:1.2s}.blk:nth-child(3){animation-delay:2.4s}.blk:nth-child(4){animation-delay:3.6s}.blk:nth-child(5){animation-delay:4.8s}
+    @keyframes appear{0%{opacity:0;transform:translateY(6px)}6%{opacity:1;transform:translateY(0)}88%{opacity:1}100%{opacity:0}}
+    .seal{transform-origin:1040px 150px;opacity:0;animation:stamp 9s linear infinite;animation-delay:6.2s}
+    @keyframes stamp{0%{opacity:0;transform:scale(2) rotate(-25deg)}4%{opacity:1;transform:scale(1) rotate(-12deg)}80%{opacity:1;transform:scale(1) rotate(-12deg)}90%{opacity:0}100%{opacity:0}}
+    .vote{opacity:0;animation:vote 9s linear infinite}
+    .v0{animation-delay:5.2s}.v1{animation-delay:5.45s}.v2{animation-delay:5.7s}
+    @keyframes vote{0%{opacity:0}2%{opacity:1}9%{opacity:1;transform:translate(0,0)}10%{opacity:0}100%{opacity:0}}
+    @media (prefers-reduced-motion:reduce){.blk,.seal,.vote{animation:none;opacity:1}}
+  </style>
+  <rect width="1200" height="300" fill="#EEF1F4"/>
+  <text x="60" y="118" class="t" font-size="64">JurisLedger</text>
+  <text x="62" y="160" class="s" font-size="22">A ledger that nobody owns, and anybody can check.</text>
+  <text x="62" y="196" class="s" font-size="16">Signed contracts · arbitration · verifiable national accounts · fraud detection · confidential payments</text>
+  <text x="62" y="222" class="s" font-size="16">Byzantine-fault-tolerant validators over TLS · 11 experiments · 101 checked claims · 138 tests</text>
+  <g transform="translate(700,120)">
+    <g class="blk"><rect x="0" y="0" width="56" height="56" rx="8" class="sheet"/><rect x="0" y="0" width="56" height="56" rx="8" class="rule"/><text x="28" y="34" text-anchor="middle" class="s" font-size="13">1</text></g>
+    <g class="blk"><line x1="56" y1="28" x2="72" y2="28" class="rule"/><rect x="72" y="0" width="56" height="56" rx="8" class="sheet"/><rect x="72" y="0" width="56" height="56" rx="8" class="rule"/><text x="100" y="34" text-anchor="middle" class="s" font-size="13">2</text></g>
+    <g class="blk"><line x1="128" y1="28" x2="144" y2="28" class="rule"/><rect x="144" y="0" width="56" height="56" rx="8" class="sheet"/><rect x="144" y="0" width="56" height="56" rx="8" class="rule"/><text x="172" y="34" text-anchor="middle" class="s" font-size="13">3</text></g>
+    <g class="blk"><line x1="200" y1="28" x2="216" y2="28" class="rule"/><rect x="216" y="0" width="56" height="56" rx="8" class="sheet"/><rect x="216" y="0" width="56" height="56" rx="8" class="rule"/><text x="244" y="34" text-anchor="middle" class="s" font-size="13">4</text></g>
+    <g class="blk"><line x1="272" y1="28" x2="288" y2="28" class="rule"/><rect x="288" y="0" width="56" height="56" rx="8" class="sheet"/><rect x="288" y="0" width="56" height="56" rx="8" class="rule"/><text x="316" y="34" text-anchor="middle" class="s" font-size="13">5</text></g>
+  </g>
+  <g class="vote v0"><circle cx="330" cy="98" r="0"/><text x="720" y="100" class="s" font-size="12">v0 ✓</text></g>
+  <g class="vote v1"><text x="760" y="100" class="s" font-size="12">v1 ✓</text></g>
+  <g class="vote v2"><text x="800" y="100" class="s" font-size="12">v2 ✓</text></g>
+  <g class="seal"><circle cx="1040" cy="150" r="46" fill="none" stroke="#B8302F" stroke-width="4"/><circle cx="1040" cy="150" r="37" fill="none" stroke="#B8302F" stroke-width="1.2"/>
+    <text x="1040" y="146" text-anchor="middle" font-size="13" fill="#B8302F" class="t">FINAL</text><text x="1040" y="163" text-anchor="middle" font-size="10" fill="#B8302F" class="s">3 of 4 signed</text></g>
+</svg>

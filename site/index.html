@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>JurisLedger — how a public ledger for contracts and accounts works</title>
+<meta name="description" content="Step through how a payment becomes final, how a network attack fails, how a contract is sealed, and how a country measures its economy from the ledger.">
+<style>
+:root{
+  --paper:#EEF1F4;--sheet:#FFFFFF;--ink:#0F1F3D;--ink-2:#41506B;--rule:#C8D0DB;
+  --seal:#B8302F;--verified:#127C6E;--amber:#B4720C;--wash:#DCE4EE;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{--paper:#0E1420;--sheet:#151D2B;--ink:#E8EDF4;--ink-2:#A6B3C6;--rule:#2A3648;--wash:#1C2637;--seal:#E0524F;--verified:#3FBDAA;--amber:#E0A045}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:4rem}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.001s!important;transition-duration:.001s!important}}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 var(--sans)}
+a{color:inherit}
+h1,h2,h3{font-family:var(--serif);font-weight:500;line-height:1.1;margin:0}
+h1{font-size:clamp(2.4rem,6vw,4.6rem);letter-spacing:-.01em}
+h1 em{font-style:italic;font-weight:400}
+h2{font-size:clamp(1.7rem,3.2vw,2.5rem)}
+h3{font-size:1.2rem;margin:1.2rem 0 .4rem}
+p{max-width:64ch;margin:.5rem 0}
+.wrap{max-width:1180px;margin:0 auto;padding:0 clamp(1rem,4vw,3rem)}
+header.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--rule)}
+header.top .wrap{display:flex;align-items:center;gap:1.5rem;height:3.4rem}
+.brand{font-family:var(--serif);font-size:1.25rem;text-decoration:none}
+nav.folios{display:flex;gap:1.1rem;overflow-x:auto;font-size:.9rem;margin-left:auto}
+nav.folios a{text-decoration:none;color:var(--ink-2);white-space:nowrap;padding:.3rem 0;border-bottom:2px solid transparent}
+nav.folios a:hover,nav.folios a:focus-visible{color:var(--ink);border-color:var(--seal);outline:none}
+.hero{padding:clamp(3rem,8vw,7rem) 0 3rem;display:grid;grid-template-columns:1.1fr 1fr;gap:3rem;align-items:center}
+.hero p.lead{font-size:1.2rem;color:var(--ink-2)}
+.hero .cta{display:flex;gap:.8rem;flex-wrap:wrap;margin-top:1.4rem}
+.btn{font:inherit;font-size:.95rem;padding:.6rem 1.1rem;border-radius:999px;border:1px solid var(--ink);background:var(--ink);color:var(--paper);cursor:pointer;text-decoration:none}
+.btn.ghost{background:transparent;color:var(--ink)}
+.btn:focus-visible{outline:3px solid var(--seal);outline-offset:2px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+#heroCanvas{width:100%;height:auto;aspect-ratio:1/1;max-height:520px;display:block}
+.folio{padding:4rem 0;border-top:1px solid var(--rule)}
+.folio .head{display:grid;grid-template-columns:5rem 1fr;gap:1rem;align-items:baseline;margin-bottom:1.5rem}
+.folio .num{font-family:var(--serif);font-size:3rem;color:var(--rule);line-height:1}
+.stage{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:1.2rem;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:1.2rem}
+@media (max-width:860px){.hero,.stage{grid-template-columns:1fr}.folio .head{grid-template-columns:1fr}}
+.stage svg{width:100%;height:auto;display:block}
+.controls{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-top:.8rem}
+.caption{min-height:5.5rem;color:var(--ink-2)}
+.caption strong{color:var(--ink)}
+.steps{display:flex;gap:.35rem;margin:.6rem 0}
+.steps i{flex:1;height:.35rem;background:var(--wash);border-radius:2px}
+.steps i.on{background:var(--ink)}
+.good{color:var(--verified)}.bad{color:var(--seal)}.warn{color:var(--amber)}
+textarea,input[type=text],input[type=number]{font:inherit;width:100%;padding:.6rem;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--ink)}
+textarea{min-height:9rem;font-family:var(--serif);line-height:1.5}
+code,.hash{font-family:var(--mono);font-size:.85em}
+.hash{word-break:break-all;padding:.5rem .7rem;background:var(--wash);border-radius:6px;display:block;margin:.4rem 0;transition:background .3s}
+.hash.changed{background:color-mix(in srgb,var(--seal) 18%,var(--wash))}
+.status{display:inline-block;padding:.15rem .6rem;border-radius:999px;font-size:.85rem;border:1px solid currentColor}
+.parties{display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0}
+.party{padding:.5rem .8rem;border:1px solid var(--rule);border-radius:8px;flex:1;min-width:9rem}
+.party.signed{border-color:var(--verified)}
+.party.void{border-color:var(--seal);text-decoration:line-through}
+input[type=range]{width:100%;accent-color:var(--ink)}
+.bits{display:grid;grid-template-columns:repeat(16,1fr);gap:.25rem;margin:.6rem 0}
+.bits b{aspect-ratio:1;border-radius:4px;background:var(--wash);display:grid;place-items:center;font-size:.7rem;font-weight:500;transition:background .25s,transform .25s}
+.bits b.on{background:var(--ink);color:var(--paper)}
+.bits b.bad{background:var(--seal);color:#fff;transform:scale(1.08)}
+.bar{height:1.2rem;background:var(--wash);border-radius:6px;overflow:hidden;margin:.3rem 0}
+.bar i{display:block;height:100%;background:var(--ink);transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.bar i.miss{background:var(--seal)}
+.figs{display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin:.8rem 0}
+.figs div{border-top:2px solid var(--ink);padding-top:.4rem}
+.figs b{font-family:var(--serif);font-size:1.5rem;font-weight:500;display:block}
+.issuers{display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0}
+.issuer{flex:1;min-width:8rem;padding:.6rem;border:1px solid var(--rule);border-radius:8px;cursor:pointer;background:var(--sheet);font:inherit;color:inherit;text-align:left}
+.issuer[aria-pressed=true]{border-color:var(--verified);background:color-mix(in srgb,var(--verified) 10%,var(--sheet))}
+.issuer.corrupt{border-style:dashed;color:var(--seal)}
+.verdict{font-family:var(--serif);font-size:1.5rem;margin:.6rem 0}
+.commands{background:var(--ink);color:var(--paper);border-radius:12px;padding:1.4rem;font-family:var(--mono);font-size:.9rem;overflow-x:auto;line-height:1.8}
+.commands span{opacity:.55}
+footer{padding:3rem 0 5rem;color:var(--ink-2);font-size:.95rem}
+.seal-anim{animation:stamp .5s cubic-bezier(.2,1.4,.4,1) forwards}
+@keyframes stamp{from{transform:scale(2.2) rotate(-25deg);opacity:0}to{transform:scale(1) rotate(-12deg);opacity:1}}
+.flow{stroke:var(--ink);stroke-width:1.2;fill:none;opacity:.35}
+.node circle{fill:var(--sheet);stroke:var(--ink);stroke-width:1.6}
+.node text{font:12px var(--sans);fill:var(--ink);text-anchor:middle}
+.dot{fill:var(--ink)}
+.dot.pre{fill:var(--amber)}.dot.com{fill:var(--verified)}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="#top">JurisLedger</a>
+  <nav class="folios" aria-label="Steps">
+    <a href="#final">1 A payment becomes final</a><a href="#attack">2 The network is attacked</a><a href="#contract">3 A contract is sealed</a>
+    <a href="#identity">4 Who is anyone</a><a href="#hidden">5 Hidden amounts</a><a href="#gdp">6 The economy, measured</a><a href="#fraud">7 Fraud, found</a>
+  </nav>
+</div></header>
+
+<main id="top" class="wrap">
+<section class="hero">
+  <div>
+    <h1>A ledger that <em>nobody owns</em>, and anybody can check.</h1>
+    <p class="lead">Contracts signed with keys, payments tagged with what they were for, and a record that a court, a statistics office or a rival bank can replay from the first block. This page walks the life of one transaction. Every step is something you can run.</p>
+    <div class="cta"><a class="btn" href="#final">Start with a payment</a><a class="btn ghost" href="https://github.com/Normansrule/juris-ledger">Read the code</a></div>
+  </div>
+  <canvas id="heroCanvas" width="640" height="640" aria-label="Blocks being sealed by four validators" role="img"></canvas>
+</section>
+
+<!-- 1 ------------------------------------------------------------------ -->
+<section class="folio" id="final">
+  <div class="head"><div class="num">1</div><div><h2>A payment becomes final</h2>
+  <p>Ana pays the café. Nobody is in charge, so who decides it happened? Four validators do, together, and only when more than two thirds of them agree twice.</p></div></div>
+  <div class="stage">
+    <div>
+      <svg id="finalSvg" viewBox="0 0 560 380" aria-hidden="true">
+        <defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g id="finalEdges"></g><g id="finalNodes"></g><g id="finalDots"></g>
+        <g id="finalBlock" opacity="0"><rect x="215" y="150" width="130" height="80" rx="8" fill="var(--sheet)" stroke="var(--ink)" stroke-width="1.6"/>
+          <text x="280" y="180" text-anchor="middle" font-size="12" fill="var(--ink)">block 7</text><text x="280" y="200" text-anchor="middle" font-size="11" fill="var(--ink-2)">Ana → café 4.50</text></g>
+        <g id="finalSeal" opacity="0" style="transform-origin:340px 232px"><circle cx="340" cy="232" r="30" fill="var(--sheet)" fill-opacity=".85" stroke="var(--seal)" stroke-width="3"/><circle cx="340" cy="232" r="24" fill="none" stroke="var(--seal)" stroke-width="1"/>
+          <text x="340" y="229" text-anchor="middle" font-size="9" fill="var(--seal)" font-family="var(--serif)">FINAL</text><text x="340" y="241" text-anchor="middle" font-size="7.5" fill="var(--seal)">3 of 4 signed</text></g>
+      </svg>
+    </div>
+    <div>
+      <div class="steps" id="finalSteps"></div>
+      <div class="caption" id="finalCap"></div>
+      <div class="controls"><button class="btn" id="finalNext">Next step</button><button class="btn ghost" id="finalPlay">Play all</button><button class="btn ghost" id="finalReset">Start over</button></div>
+      <p style="margin-top:1rem;font-size:.9rem">In the repository: <code>jurisledger integration</code> runs exactly this, with signed votes, on a simulated hostile network; <code>jurisledger cluster</code> runs it as four processes.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 ------------------------------------------------------------------ -->
+<section class="folio" id="attack">
+  <div class="head"><div class="num">2</div><div><h2>The network is attacked</h2>
+  <p>An attacker cannot forge a vote, so they do the one thing left: delay messages. One round of voting breaks. The second round, with a lock, holds. Watch both under the same attack.</p></div></div>
+  <div class="stage">
+    <div>
+      <svg id="attackSvg" viewBox="0 0 560 420" aria-hidden="true"></svg>
+    </div>
+    <div>
+      <div class="controls" style="margin-top:0">
+        <label><input type="radio" name="proto" value="single" checked> single-phase voting</label>
+        <label><input type="radio" name="proto" value="two"> two-phase with locks</label>
+      </div>
+      <div class="steps" id="attackSteps"></div>
+      <div class="caption" id="attackCap"></div>
+      <div class="controls"><button class="btn" id="attackNext">Next step</button><button class="btn ghost" id="attackPlay">Play all</button><button class="btn ghost" id="attackReset">Start over</button></div>
+      <p style="margin-top:1rem;font-size:.9rem">In the repository: <code>jurisledger asynchrony</code> runs this attack plus 1,000 random ones with a lying validator. Single-phase forks in some; two-phase never does.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 3 ------------------------------------------------------------------ -->
+<section class="folio" id="contract">
+  <div class="head"><div class="num">3</div><div><h2>A contract is sealed</h2>
+  <p>The words stay off the ledger. What goes on it is a fingerprint of the words, and each party's signature over that exact fingerprint. Edit the text below and watch what happens to a signed agreement.</p></div></div>
+  <div class="stage">
+    <div>
+      <label for="prose"><strong>The agreement</strong> (edit freely)</label>
+      <textarea id="prose">SUPPLY SCHEDULE 1
+The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 days.</textarea>
+      <strong>Fingerprint on the ledger (SHA-256)</strong>
+      <span class="hash" id="proseHash">…</span>
+    </div>
+    <div>
+      <div class="parties"><div class="party" id="pMill"><strong>The Mill</strong><br><span class="status">not signed</span></div><div class="party" id="pBakery"><strong>The Bakery</strong><br><span class="status">not signed</span></div></div>
+      <div class="verdict" id="contractVerdict">Draft</div>
+      <div class="controls"><button class="btn" id="signMill">Mill signs</button><button class="btn" id="signBakery">Bakery signs</button><button class="btn ghost" id="contractReset">New draft</button></div>
+      <div class="caption" id="contractCap">A contract is a draft until every named party has signed the same fingerprint. Signatures bind to the fingerprint, not to the title, so changing one character afterwards invalidates nothing on the ledger — it simply produces a different document that nobody has signed.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 ------------------------------------------------------------------ -->
+<section class="folio" id="identity">
+  <div class="head"><div class="num">4</div><div><h2>Who is anyone</h2>
+  <p>No single registrar decides who exists. An account counts as verified when enough independent issuers have vouched for it. Press issuers to attest; one of them is corrupt.</p></div></div>
+  <div class="stage">
+    <div>
+      <label>Attestations required: <strong id="kLabel">2</strong> of 4<input type="range" id="kRange" min="1" max="4" value="2"></label>
+      <div class="issuers" id="issuers"></div>
+      <div class="verdict" id="idVerdict"></div>
+      <div class="caption" id="idCap"></div>
+    </div>
+    <div>
+      <h3>What the account can do</h3>
+      <ul id="idAbilities"></ul>
+      <p style="font-size:.9rem">In the repository: <code>jurisledger identity</code> registers twenty fake firms with one corrupt issuer's help; none of them can sign a contract. Validators then vote the corrupt issuer out and its attestations stop counting at once.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 5 ------------------------------------------------------------------ -->
+<section class="folio" id="hidden">
+  <div class="head"><div class="num">5</div><div><h2>Hidden amounts, honest books</h2>
+  <p>A public ledger of every payment would be a surveillance machine. So the amount is hidden inside a commitment, and a proof shows it is a whole number of cents between 0 and 42,949,672.95 without saying which. Try to pay a negative amount.</p></div></div>
+  <div class="stage">
+    <div>
+      <label>Amount to hide (cents) <input type="number" id="hidAmt" value="123456" step="1"></label>
+      <div class="bits" id="bits"></div>
+      <div class="caption" id="hidCap"></div>
+    </div>
+    <div>
+      <h3>Why 32 bits</h3>
+      <p>The value is split into bits. Each bit gets its own commitment and a proof that it is 0 or 1 — nothing else. The 32 pieces add up to the original commitment. A negative number has no such decomposition, so the proof cannot be built, and the ledger refuses the payment.</p>
+      <p style="font-size:.9rem">In the repository: <code>jurisledger confidential</code> makes a real payment with two of these proofs and rejects money printing, overspending and replay. A proof is about 11 kB and takes a quarter of a second in pure Python.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6 ------------------------------------------------------------------ -->
+<section class="folio" id="gdp">
+  <div class="head"><div class="num">6</div><div><h2>The economy, measured</h2>
+  <p>Every payment says what it was for, and the ledger refuses tags that do not fit the accounts involved. Gross domestic product then stops being an estimate and becomes a sum. Drag the slider to see the one thing the ledger cannot see.</p></div></div>
+  <div class="stage">
+    <div>
+      <div class="figs"><div><b id="gdpE">2,196,332.41</b>by expenditure</div><div><b id="gdpP">2,196,332.41</b>by production</div><div><b id="gdpI">2,196,332.41</b>by income</div></div>
+      <label>Share of purchases paid in cash, off the ledger: <strong id="cashLabel">0%</strong><input type="range" id="cash" min="0" max="60" value="0"></label>
+      <div class="bar"><i id="gdpBar" style="width:100%"></i></div>
+      <div class="caption" id="gdpCap"><strong>Ledger captures 100.0% of true GDP.</strong> Three approaches computed from different transactions agree to the cent; that agreement is a consistency check, not a coincidence.</div>
+    </div>
+    <div>
+      <h3>How the tags become accounts</h3>
+      <svg viewBox="0 0 420 220" aria-hidden="true" style="font:12px var(--sans)">
+        <g fill="var(--ink)"><text x="10" y="30">FINAL_CONSUMPTION</text><text x="10" y="60">INVESTMENT</text><text x="10" y="90">GOVERNMENT_PURCHASE</text><text x="10" y="120">EXPORT</text><text x="10" y="150">to a non-resident</text><text x="10" y="180">INTERMEDIATE</text></g>
+        <g class="flow" stroke-linecap="round"><path d="M170 26 C 250 26, 260 80, 320 80"/><path d="M170 56 C 250 56, 260 80, 320 80"/><path d="M170 86 C 250 86, 260 80, 320 80"/><path d="M170 116 C 250 116, 260 80, 320 80"/><path d="M170 146 C 250 146, 260 80, 320 80"/><path d="M170 176 C 250 176, 260 190, 320 190"/></g>
+        <g fill="var(--ink)"><text x="330" y="84">C + I + G + X − M</text><text x="330" y="194">not in GDP</text></g>
+      </svg>
+      <p style="font-size:.9rem">In the repository: <code>jurisledger gdp</code> compares the ledger with the simulator's own books and with a stylised survey. Ledger error on what is on it: 0.0%.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7 ------------------------------------------------------------------ -->
+<section class="folio" id="fraud">
+  <div class="head"><div class="num">7</div><div><h2>Fraud, found</h2>
+  <p>Some fraud the ledger makes impossible: forged payments, replays, back-dated contracts. Some it can only make visible. Round-tripping — passing the same money in a circle to inflate revenue — is the second kind. Inject one and run the detector.</p></div></div>
+  <div class="stage">
+    <div><svg id="fraudSvg" viewBox="0 0 560 360" aria-hidden="true"></svg></div>
+    <div>
+      <div class="controls" style="margin-top:0"><button class="btn" id="fraudInject">Inject a ring</button><button class="btn" id="fraudDetect" disabled>Run detector</button><button class="btn ghost" id="fraudReset">Clear</button></div>
+      <div class="caption" id="fraudCap">Six firms trade normally. Nothing to see yet.</div>
+      <p style="font-size:.9rem">In the repository: <code>jurisledger fraud</code> injects four frauds — a ring, structuring under a reporting threshold, invented invoice amounts, and one receivable pledged to two banks — and reports its false positives on a clean economy too.</p>
+    </div>
+  </div>
+</section>
+
+<section class="folio">
+  <div class="head"><div class="num" aria-hidden="true">&nbsp;</div><div><h2>Run every one of these yourself</h2>
+  <p>Each claim on this page is a boolean in the test suite. Tested on Ubuntu with Python 3.10 or newer; the only dependency is the <code>cryptography</code> package.</p></div></div>
+  <div class="commands">
+<span># get it</span><br>git clone https://github.com/Normansrule/juris-ledger.git &amp;&amp; cd juris-ledger<br>python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install -e ".[dev]"<br><br>
+<span># the seven steps above, as experiments with checked claims</span><br>jurisledger integration &nbsp;&nbsp;<span># 1</span><br>jurisledger asynchrony &nbsp;&nbsp;&nbsp;<span># 2</span><br>jurisledger contracts &nbsp;&nbsp;&nbsp;&nbsp;<span># 3</span><br>jurisledger identity &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 4</span><br>jurisledger confidential &nbsp;<span># 5</span><br>jurisledger gdp &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 6</span><br>jurisledger fraud &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 7</span><br><br>
+<span># then the real thing: four validator processes, one killed and revived</span><br>jurisledger cluster --out cluster
+  </div>
+</section>
+</main>
+<footer><div class="wrap">JurisLedger is a research prototype under the MIT licence. It is a laboratory, not a payment system; its limitations are part of the result and are listed in the repository. Nothing here is legal advice.</div></footer>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const sleep = ms => new Promise(r => setTimeout(r, reduced ? 0 : ms));
+const svgNS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(svgNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++) { const b = document.createElement("i"); if (k <= i) b.classList.add("on"); box.appendChild(b); } };
+
+/* ---------- hero: one orchestrated sequence ---------- */
+(function hero() {
+  const c = $("#heroCanvas"), ctx = c.getContext("2d");
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const W = 640, cx = 320, cy = 320, R = 210;
+  const vals = [0, 1, 2, 3].map(i => ({ a: -Math.PI / 2 + i * Math.PI / 2 }));
+  let t0 = null, blocks = 0;
+  function frame(ts) {
+    if (!t0) t0 = ts; const t = reduced ? 9e9 : (ts - t0) / 1000;
+    ctx.clearRect(0, 0, W, W);
+    ctx.strokeStyle = css("--rule"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+    // chain of blocks in the centre
+    const n = Math.min(5, Math.floor(t / 1.6));
+    for (let i = 0; i < n; i++) {
+      const x = cx - 100 + i * 50, y = cy;
+      ctx.fillStyle = css("--sheet"); ctx.strokeStyle = css("--ink"); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(x - 20, y - 20, 40, 40, 6); ctx.fill(); ctx.stroke();
+      if (i) { ctx.beginPath(); ctx.moveTo(x - 30, y); ctx.lineTo(x - 20, y); ctx.stroke(); }
+    }
+    // validators and their votes flying to the newest block
+    const phase = (t % 1.6) / 1.6, target = cx - 100 + n * 50;
+    vals.forEach((v, i) => {
+      const x = cx + R * Math.cos(v.a), y = cy + R * Math.sin(v.a);
+      ctx.fillStyle = css("--sheet"); ctx.strokeStyle = css("--ink"); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = css("--ink"); ctx.font = "12px " + css("--sans"); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("v" + i, x, y);
+      if (n < 5 && i !== 3) { // v3 is "slow": three of four is enough
+        const p = Math.min(1, phase * 1.4), ex = x + (target - x) * p, ey = y + (cy - y) * p;
+        ctx.fillStyle = p < 0.5 ? css("--amber") : css("--verified"); ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+    if (n === 5) { // stamp the seal once
+      ctx.save(); ctx.translate(cx + 100, cy - 10); ctx.rotate(-0.2); ctx.strokeStyle = css("--seal"); ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, 23, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = css("--seal"); ctx.font = "9px " + css("--serif"); ctx.fillText("FINAL", 0, -4); ctx.font = "8px " + css("--sans"); ctx.fillText("3 of 4", 0, 7); ctx.restore();
+      ctx.fillStyle = css("--ink-2"); ctx.font = "13px " + css("--sans"); ctx.fillText("five blocks, each sealed by a quorum", cx, cy + 70);
+      return;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+/* ---------- 1: finality stepper ---------- */
+(function finality() {
+  const svg = $("#finalSvg"), edges = $("#finalEdges"), nodes = $("#finalNodes"), dots = $("#finalDots");
+  const P = { ana: [60, 60], v0: [280, 40], v1: [500, 190], v2: [280, 340], v3: [60, 190] };
+  const pairs = [["v0", "v1"], ["v1", "v2"], ["v2", "v3"], ["v3", "v0"], ["v0", "v2"], ["v1", "v3"], ["ana", "v3"]];
+  pairs.forEach(([a, b]) => el("line", { x1: P[a][0], y1: P[a][1], x2: P[b][0], y2: P[b][1], class: "flow" }, edges));
+  for (const k in P) { const g = el("g", { class: "node" }, nodes); el("circle", { cx: P[k][0], cy: P[k][1], r: k === "ana" ? 18 : 22 }, g); el("text", { x: P[k][0], y: P[k][1] + 4 }, g).textContent = k === "ana" ? "Ana" : k; }
+  const steps = [
+    ["<strong>Ana signs.</strong> Her wallet builds the payment — to the café, 4.50, purpose: final consumption — and signs it with her own key. Nobody else can produce this signature, and it includes the network name and a counter, so it cannot be replayed here or anywhere else.", async () => fly("ana", "v3", "dot")],
+    ["<strong>The payment is gossiped.</strong> The validator that received it forwards it to the others. Every validator checks the signature and the rules before keeping it.", async () => { await Promise.all([fly("v3", "v0", "dot"), fly("v3", "v2", "dot")]); await fly("v0", "v1", "dot"); }],
+    ["<strong>The proposer builds a block.</strong> It is validator 0's turn. It executes the payment against its copy of the state, computes the resulting state digest, and proposes the block.", async () => { $("#finalBlock").style.transition = "opacity .4s"; $("#finalBlock").setAttribute("opacity", "1"); await Promise.all(["v1", "v2", "v3"].map(v => fly("v0", v, "dot"))); }],
+    ["<strong>First vote: prevote.</strong> Each validator re-executes the block itself. If every rule holds, it signs a prevote. A forged or invalid block gets no honest votes.", async () => Promise.all(["v1", "v2", "v3", "v0"].map(v => Promise.all(["v0", "v1", "v2", "v3"].filter(w => w !== v).map(w => fly(v, w, "dot pre")))))],
+    ["<strong>Second vote: precommit, with a lock.</strong> Having seen prevotes from more than two thirds, each validator locks on this block and signs a precommit. From now on it will not help finalise a rival block at this height.", async () => Promise.all(["v1", "v2", "v0"].map(v => Promise.all(["v0", "v1", "v2", "v3"].filter(w => w !== v).map(w => fly(v, w, "dot com")))))],
+    ["<strong>Final.</strong> Three signed precommits are the certificate. Anyone holding the validators' public keys can check it offline, forever. Validator 3 was slow; three of four is enough, and it will catch up by verifying the same certificate.", async () => { const s = $("#finalSeal"); s.setAttribute("opacity", "1"); s.classList.add("seal-anim"); }],
+  ];
+  let i = -1, playing = false;
+  function fly(a, b, cls) { return new Promise(res => { const d = el("circle", { r: 5, cx: P[a][0], cy: P[a][1], class: cls }, dots); const t0 = performance.now(), dur = reduced ? 1 : 700;
+    (function step(now) { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3); d.setAttribute("cx", P[a][0] + (P[b][0] - P[a][0]) * e); d.setAttribute("cy", P[a][1] + (P[b][1] - P[a][1]) * e); if (p < 1) requestAnimationFrame(step); else { setTimeout(() => d.remove(), 300); res(); } })(t0); }); }
+  async function next() { if (i >= steps.length - 1) return; i++; stepsUI($("#finalSteps"), steps.length, i); $("#finalCap").innerHTML = steps[i][0]; $("#finalNext").disabled = true; await steps[i][1](); $("#finalNext").disabled = i >= steps.length - 1; }
+  function reset() { i = -1; dots.innerHTML = ""; $("#finalBlock").setAttribute("opacity", "0"); const s = $("#finalSeal"); s.setAttribute("opacity", "0"); s.classList.remove("seal-anim"); stepsUI($("#finalSteps"), steps.length, -1); $("#finalCap").innerHTML = "Press <strong>Next step</strong> to follow one payment from Ana's phone to a sealed block."; $("#finalNext").disabled = false; }
+  $("#finalNext").onclick = next; $("#finalReset").onclick = reset;
+  $("#finalPlay").onclick = async () => { if (playing) return; playing = true; reset(); while (i < steps.length - 1) { await next(); await sleep(900); } playing = false; };
+  reset();
+})();
+
+/* ---------- 2: partition attack ---------- */
+(function attack() {
+  const svg = $("#attackSvg");
+  const P = { v0: [110, 90], v1: [450, 90], v2: [450, 330], v3: [110, 330] };
+  let proto = "single", i = -1, playing = false;
+  function draw() {
+    svg.innerHTML = "";
+    const g = el("g", {}, svg);
+    [["v0", "v1"], ["v1", "v2"], ["v2", "v3"], ["v3", "v0"], ["v0", "v2"], ["v1", "v3"]].forEach(([a, b]) => el("line", { x1: P[a][0], y1: P[a][1], x2: P[b][0], y2: P[b][1], class: "flow", id: "e-" + a + b }, g));
+    for (const k in P) { const n = el("g", { class: "node", id: "n-" + k }, svg); el("circle", { cx: P[k][0], cy: P[k][1], r: 26 }, n); el("text", { x: P[k][0], y: P[k][1] + 4 }, n).textContent = k; el("text", { x: P[k][0], y: P[k][1] + 46, id: "s-" + k, "font-size": "11", fill: "var(--ink-2)" }, n).textContent = "round 0"; }
+    el("text", { x: 280, y: 408, "text-anchor": "middle", "font-size": "13", fill: "var(--ink)", id: "verdictText" }, svg);
+  }
+  const say = (k, txt, cls) => { const t = document.getElementById("s-" + k); t.textContent = txt; t.setAttribute("fill", cls === "bad" ? "var(--seal)" : cls === "good" ? "var(--verified)" : cls === "warn" ? "var(--amber)" : "var(--ink-2)"); };
+  const cut = (a, b, on) => { const e = document.getElementById("e-" + a + b) || document.getElementById("e-" + b + a); e.setAttribute("stroke-dasharray", on ? "4 6" : ""); e.setAttribute("stroke", on ? "var(--seal)" : "var(--ink)"); e.setAttribute("opacity", on ? ".9" : ".35"); };
+  const common = [
+    ["<strong>Round 0.</strong> Validator 0 proposes block A. The attacker delays every message to and from validator 1, and holds back the finalising votes so that only validator 0 sees them.", () => { ["v0", "v1"].forEach(() => 0); cut("v0", "v1", 1); cut("v1", "v2", 1); cut("v1", "v3", 1); say("v0", "proposes A"); say("v1", "cut off", "warn"); say("v2", "voted A"); say("v3", "voted A"); }],
+    ["<strong>Validator 0 finalises A.</strong> It saw three votes: a quorum. Block A is final for it, and correctly so — a quorum of signatures is a quorum. Now the attacker cuts validator 0 off too.", () => { say("v0", "FINAL: A", "good"); cut("v0", "v2", 1); cut("v0", "v3", 1); }],
+    ["<strong>Validators 1, 2 and 3 time out.</strong> They never saw the quorum. They move to round 1, where validator 1 is the proposer. It proposes a different block, B.", () => { say("v1", "round 1: proposes B", "warn"); say("v2", "round 1"); say("v3", "round 1"); }],
+  ];
+  const single = common.concat([
+    ["<strong>Single-phase voting: they vote for B.</strong> The rule is one vote per round, and this is a new round. Three votes for B: a quorum.", () => { say("v2", "voted B", "warn"); say("v3", "voted B", "warn"); }],
+    ["<strong>Fork.</strong> Validator 0 holds a valid certificate for A; validators 1, 2 and 3 hold a valid certificate for B. Both pass a full audit. Every validator was honest. The protocol was wrong.", () => { say("v1", "FINAL: B", "bad"); say("v2", "FINAL: B", "bad"); say("v3", "FINAL: B", "bad"); document.getElementById("verdictText").textContent = "Two finalised blocks at height 1 — the ledger has forked."; document.getElementById("verdictText").setAttribute("fill", "var(--seal)"); }],
+  ]);
+  const two = common.concat([
+    ["<strong>Two-phase voting: validators 2 and 3 refuse B.</strong> In round 0 they saw a quorum of <em>prevotes</em> for A and locked on it. A locked validator only prevotes its lock, or nil. B gets one prevote: no quorum, no progress.", () => { say("v2", "locked on A: nil", "good"); say("v3", "locked on A: nil", "good"); }],
+    ["<strong>Round 2: validator 2 re-proposes A</strong>, with the round-0 prevotes as proof. Validator 1 has no lock and accepts. Prevotes, precommits, quorum. The partition heals; validator 0 already had A.", () => { say("v2", "round 2: proposes A", "good"); say("v1", "accepts A", "good"); }],
+    ["<strong>Agreement.</strong> Everyone finalised A. Two quorums always share an honest validator, and that validator's lock is what makes two answers impossible.", () => { for (const k in P) say(k, "FINAL: A", "good"); for (const [a, b] of [["v0", "v1"], ["v1", "v2"], ["v1", "v3"], ["v0", "v2"], ["v0", "v3"]]) cut(a, b, 0); document.getElementById("verdictText").textContent = "One block at height 1, on every validator."; document.getElementById("verdictText").setAttribute("fill", "var(--verified)"); }],
+  ]);
+  const steps = () => proto === "single" ? single : two;
+  function reset() { i = -1; draw(); stepsUI($("#attackSteps"), steps().length, -1); $("#attackCap").innerHTML = "Choose a protocol, then press <strong>Next step</strong>. The attacker is the same in both cases: it forges nothing and drops nothing, it only delays."; $("#attackNext").disabled = false; }
+  async function next() { if (i >= steps().length - 1) return; i++; stepsUI($("#attackSteps"), steps().length, i); $("#attackCap").innerHTML = steps()[i][0]; steps()[i][1](); $("#attackNext").disabled = i >= steps().length - 1; }
+  document.querySelectorAll('input[name=proto]').forEach(r => r.onchange = e => { proto = e.target.value; reset(); });
+  $("#attackNext").onclick = next; $("#attackReset").onclick = reset;
+  $("#attackPlay").onclick = async () => { if (playing) return; playing = true; reset(); while (i < steps().length - 1) { await next(); await sleep(1400); } playing = false; };
+  reset();
+})();
+
+/* ---------- 3: contract ---------- */
+(function contract() {
+  const ta = $("#prose"), out = $("#proseHash"); let signedHash = null, signed = { mill: false, bakery: false }, last = "";
+  async function sha(text) { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join(""); }
+  async function update() { const h = await sha(ta.value); out.textContent = h; out.classList.toggle("changed", !!signedHash && h !== signedHash); if (last && h !== last) render(h); last = h; }
+  function render(h) {
+    const active = signed.mill && signed.bakery && signedHash === h;
+    const cur = h || last;
+    [["mill", "#pMill"], ["bakery", "#pBakery"]].forEach(([k, sel]) => { const p = $(sel); p.className = "party" + (signed[k] ? (signedHash === cur ? " signed" : " void") : ""); p.querySelector(".status").textContent = signed[k] ? (signedHash === cur ? "signed this fingerprint" : "signed a DIFFERENT text") : "not signed"; });
+    const v = $("#contractVerdict");
+    if (signedHash && signedHash !== cur) { v.textContent = "Unsigned draft"; v.className = "verdict bad"; $("#contractCap").innerHTML = "The text changed after signing. The signatures still exist on the ledger — for the <em>old</em> fingerprint. This new text has no signatures at all. To change an agreement, both parties sign a new one that cites the old as superseded; nothing is ever edited in place."; }
+    else if (active) { v.textContent = "Active"; v.className = "verdict good"; $("#contractCap").innerHTML = "Every party signed the same fingerprint. The vault will now release the text only against a signed, finalised access receipt, so who read it becomes a fact on the record."; }
+    else { v.textContent = "Draft"; v.className = "verdict"; $("#contractCap").innerHTML = "A contract is a draft until every named party has signed the same fingerprint. " + (signed.mill || signed.bakery ? "One signature so far." : ""); }
+  }
+  async function sign(k) { const h = await sha(ta.value); if (signedHash && signedHash !== h) { signedHash = h; signed = { mill: false, bakery: false }; } signedHash = h; signed[k] = true; render(h); }
+  ta.addEventListener("input", update);
+  $("#signMill").onclick = () => sign("mill"); $("#signBakery").onclick = () => sign("bakery");
+  $("#contractReset").onclick = () => { signedHash = null; signed = { mill: false, bakery: false }; out.classList.remove("changed"); render(last); };
+  update().then(() => render(last));
+})();
+
+/* ---------- 4: identity ---------- */
+(function identity() {
+  const names = ["Company registry", "Tax authority", "Civil registry", "Rubber-stamp Ltd"], corrupt = 3;
+  let on = [false, false, false, false], k = 2, removed = false;
+  const box = $("#issuers");
+  names.forEach((n, i) => { const b = document.createElement("button"); b.className = "issuer" + (i === corrupt ? " corrupt" : ""); b.setAttribute("aria-pressed", "false"); b.innerHTML = `<strong>${n}</strong><br><span style="font-size:.85rem">${i === corrupt ? "attests anyone, for a fee" : "checks documents"}</span>`; b.onclick = () => { on[i] = !on[i]; b.setAttribute("aria-pressed", on[i]); render(); }; box.appendChild(b); });
+  const vote = document.createElement("button"); vote.className = "btn ghost"; vote.textContent = "Validators vote Rubber-stamp Ltd out"; vote.style.marginTop = ".6rem"; box.after(vote);
+  vote.onclick = () => { removed = !removed; vote.textContent = removed ? "Reinstate Rubber-stamp Ltd (for the demo)" : "Validators vote Rubber-stamp Ltd out"; render(); };
+  $("#kRange").oninput = e => { k = +e.target.value; $("#kLabel").textContent = k; render(); };
+  function render() {
+    const counted = on.filter((v, i) => v && !(removed && i === corrupt)).length, ok = counted >= k;
+    $("#idVerdict").textContent = ok ? "Verified" : "Unverified"; $("#idVerdict").className = "verdict " + (ok ? "good" : "");
+    $("#idCap").innerHTML = `${counted} attestation${counted === 1 ? "" : "s"} count${counted === 1 ? "s" : ""}; ${k} required.` + (removed ? " Rubber-stamp Ltd was removed by a two-thirds validator vote, so its attestations stopped counting at once." : (on[corrupt] ? " Rubber-stamp Ltd's attestation counts for now — one corrupt issuer alone can never reach a threshold of two, and validators can remove it." : ""));
+    $("#idAbilities").innerHTML = [`Small payments (under the cap): <span class="good">always</span>`, `Payments above the cap: <span class="${ok ? "good" : "bad"}">${ok ? "allowed" : "refused"}</span>`, `Sign a contract: <span class="${ok ? "good" : "bad"}">${ok ? "allowed" : "refused"}</span>`, `Hold a hidden balance: <span class="${ok ? "good" : "bad"}">${ok ? "allowed" : "refused"}</span>`, `Recover a lost key: needs ${k} issuers that attested this account, then a waiting period the owner can veto`].map(x => `<li>${x}</li>`).join("");
+  }
+  render();
+})();
+
+/* ---------- 5: hidden amounts ---------- */
+(function hidden() {
+  const box = $("#bits"), inp = $("#hidAmt"), MAX = 2 ** 32 - 1;
+  for (let i = 31; i >= 0; i--) { const b = document.createElement("b"); b.textContent = i; b.dataset.i = i; box.appendChild(b); }
+  function render() {
+    const v = Math.trunc(Number(inp.value)); const cells = [...box.children];
+    if (!Number.isFinite(v) || v < 0 || v > MAX) { cells.forEach(c => { c.className = "bad"; c.textContent = "×"; }); $("#hidCap").innerHTML = `<strong class="bad">Refused.</strong> ${v < 0 ? "A negative amount has no 32-bit decomposition, so no proof can be built: the ledger never sees the number, it sees a proof that does not verify. Money printing fails at the mathematics, not at a policy check." : "Above 42,949,672.95 there is no proof either; larger sums are split."}`; return; }
+    cells.forEach(c => { const i = +c.dataset.i, on = (v >> i) & 1; c.className = on ? "on" : ""; c.textContent = i; });
+    const ones = cells.filter(c => c.className === "on").length;
+    $("#hidCap").innerHTML = `<strong>${v.toLocaleString()} cents</strong> = ${ones} set bit${ones === 1 ? "" : "s"}. Each bit gets a commitment and a proof that it is 0 or 1; the 32 commitments add up to the commitment of the amount. The verifier learns that the sum is in range — nothing about which bits are set.`;
+  }
+  inp.addEventListener("input", render); render();
+})();
+
+/* ---------- 6: gdp ---------- */
+(function gdp() {
+  const TRUE = 219633241, base = 219633241; // from the simulation, cents
+  const fmt = c => (c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  $("#cash").oninput = e => { const s = +e.target.value; const captured = 1 - 0.43 * (s / 100); // household purchases are ~43% of the simulated GDP
+    const v = Math.round(base * captured); $("#cashLabel").textContent = s + "%"; ["#gdpE", "#gdpP", "#gdpI"].forEach(id => $(id).textContent = fmt(v));
+    $("#gdpBar").style.width = (captured * 100).toFixed(1) + "%"; $("#gdpBar").className = s ? "miss" : "";
+    $("#gdpCap").innerHTML = `<strong>Ledger captures ${(captured * 100).toFixed(1)}% of true GDP.</strong> ` + (s ? "The three approaches still agree with each other — the ledger is exactly right about what is on it, and silent about what is not. That is the honest limit of any ledger-based statistic." : "Three approaches computed from different transactions agree to the cent; that agreement is a consistency check, not a coincidence."); };
+})();
+
+/* ---------- 7: fraud ---------- */
+(function fraud() {
+  const svg = $("#fraudSvg"); const N = 6, P = [];
+  for (let i = 0; i < N; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / N; P.push([280 + 150 * Math.cos(a), 180 + 130 * Math.sin(a)]); }
+  const names = ["Mill", "Bakery", "Haulier", "Dairy", "Printer", "Farm"];
+  let ring = false, timer = null;
+  function draw() {
+    svg.innerHTML = ""; clearInterval(timer);
+    const normal = [[0, 1], [1, 2], [2, 0], [3, 1], [4, 5], [5, 3], [2, 4]];
+    normal.forEach(([a, b]) => el("line", { x1: P[a][0], y1: P[a][1], x2: P[b][0], y2: P[b][1], class: "flow" }, svg));
+    if (ring) [[1, 3], [3, 5], [5, 1]].forEach(([a, b]) => el("line", { x1: P[a][0], y1: P[a][1], x2: P[b][0], y2: P[b][1], stroke: "var(--ink)", "stroke-width": 2.2, fill: "none", id: `r${a}${b}`, opacity: .9 }, svg));
+    P.forEach((p, i) => { const g = el("g", { class: "node", id: "f" + i }, svg); el("circle", { cx: p[0], cy: p[1], r: 26 }, g); el("text", { x: p[0], y: p[1] + 4 }, g).textContent = names[i]; });
+    if (ring) { // animate money around the ring
+      const path = [1, 3, 5, 1]; let seg = 0, t = 0; const d = el("circle", { r: 6, fill: "var(--amber)" }, svg);
+      timer = setInterval(() => { t += reduced ? 1 : 0.04; if (t >= 1) { t = 0; seg = (seg + 1) % 3; } const a = P[path[seg]], b = P[path[seg + 1]]; d.setAttribute("cx", a[0] + (b[0] - a[0]) * t); d.setAttribute("cy", a[1] + (b[1] - a[1]) * t); }, 30);
+    }
+  }
+  $("#fraudInject").onclick = () => { ring = true; draw(); $("#fraudDetect").disabled = false; $("#fraudCap").innerHTML = "Bakery pays Dairy 250,000; Dairy pays Farm 251,000; Farm pays Bakery 252,000. Each payment is properly signed and tagged. Each firm's revenue went up by a quarter of a million. Nothing was produced."; };
+  $("#fraudDetect").onclick = () => { if (!ring) return; ["r13", "r35", "r51"].forEach(id => { const e = document.getElementById(id); e.setAttribute("stroke", "var(--seal)"); e.setAttribute("stroke-width", 4); }); [1, 3, 5].forEach(i => document.querySelector("#f" + i + " circle").setAttribute("stroke", "var(--seal)")); $("#fraudCap").innerHTML = `<strong class="bad">Flag: circular flow.</strong> Bakery → Dairy → Farm → Bakery, three hops, amounts within 10% of each other, inside six blocks. On a shared ledger this is a graph search; across three separate sets of books it is an investigation that usually never starts. A flag is a lead for a person, not a verdict.`; };
+  $("#fraudReset").onclick = () => { ring = false; draw(); $("#fraudDetect").disabled = true; $("#fraudCap").textContent = "Six firms trade normally. Nothing to see yet."; };
+  draw();
+})();
+})();
+</script>
+</body>
+</html>

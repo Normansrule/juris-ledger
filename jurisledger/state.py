@@ -59,6 +59,7 @@ PAYMENT_RULES = {
 }
 TAX_TYPES = {"production", "income"}
 
+POLICY_KEYS = {"min_attestations", "unverified_payment_limit", "recovery_delay"}
 DRAFT, ACTIVE, SUPERSEDED = "DRAFT", "ACTIVE", "SUPERSEDED"
 RELATIONS = {"cites", "amends", "supersedes", "implements"}
 VISIBILITIES = {"public", "restricted"}
@@ -657,8 +658,22 @@ class State:
         p = tx.payload
         _need(tx.sender in self.validators, "only validators vote on the validator set")
         action, target = p.get("action"), p.get("target")
-        _need(action in {"ADD", "REMOVE", "ADD_ISSUER", "REMOVE_ISSUER"},
-              "action must be ADD|REMOVE|ADD_ISSUER|REMOVE_ISSUER")
+        _need(action in {"ADD", "REMOVE", "ADD_ISSUER", "REMOVE_ISSUER", "SET_POLICY"},
+              "action must be ADD|REMOVE|ADD_ISSUER|REMOVE_ISSUER|SET_POLICY")
+        if action == "SET_POLICY":
+            # Rules a legislature would set: identity threshold, caps, recovery delay.
+            # Changed only by a validator quorum, recorded forever, effective at once.
+            _need(isinstance(target, str) and target in POLICY_KEYS, f"policy key must be one of {sorted(POLICY_KEYS)}")
+            value = p.get("value")
+            _need(isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 10 ** 12, "bad policy value")
+            key = f"SET_POLICY:{target}:{value}"
+            voters = self.gov_votes.setdefault(key, [])
+            _need(tx.sender not in voters, "already voted")
+            voters.append(tx.sender)
+            if len([v for v in voters if v in self.validators]) >= quorum(len(self.validators)):
+                self.policy[target] = value
+                self.gov_votes = {}
+            return
         _need(isinstance(target, str) and re.match(r"^[0-9a-f]{64}$", target) is not None, "bad target")
         if action == "ADD":
             _need(target not in self.validators, "already a validator")

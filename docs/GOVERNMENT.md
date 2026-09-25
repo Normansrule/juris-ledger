@@ -77,7 +77,7 @@ Each phase is useful if the next never happens.
 ## 6. What must exist outside the code
 
 - **Law.** Recognition of ledger records and evidence files; rules on who may be an issuer; liability for a negligent attestation; how erasure rights apply to vaults. See `docs/LEGAL.md`.
-- **Governance charter.** How seats are allocated, rotated and funded; conflict-of-interest rules; what happens when the chain halts (by design it halts and does not guess when a third of validators are missing).
+- **Governance charter.** How seats are allocated, rotated and funded; conflict-of-interest rules; what happens when the chain halts (by design it halts and does not guess when a third of validators are missing). The mechanics exist — validator votes change the validator set, the issuer set and the policy parameters — the charter says who may cast them.
 - **Key custody.** Hardware keys for validators and issuers; ceremonies; incident response. The protocol assumes keys are secret and says nothing about how.
 - **Inclusion.** People without smartphones, legal guardianship, companies in liquidation, the deceased.
 

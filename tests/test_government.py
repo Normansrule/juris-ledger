@@ -110,3 +110,14 @@ def test_demo_ledger_is_consistent(demo):
     assert chain.state.policy["min_attestations"] == 2
     assert all(c["status"] == S.ACTIVE for c in chain.state.contracts.values())
     assert any(b.vote_round >= b.header.round for b in chain.blocks)
+
+
+def test_explainer_site_is_self_contained_and_covers_every_step():
+    import re
+    from pathlib import Path
+    html = Path(__file__).resolve().parent.parent / "site" / "index.html"
+    text = html.read_text()
+    assert "<link" not in text and 'src="http' not in text and "@import" not in text
+    for anchor in ("final", "attack", "contract", "identity", "hidden", "gdp", "fraud"):
+        assert f'id="{anchor}"' in text
+    assert "prefers-reduced-motion" in text and "prefers-color-scheme" in text

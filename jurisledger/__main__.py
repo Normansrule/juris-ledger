@@ -10,6 +10,8 @@
   jurisledger cluster [--out DIR] [--n 4] run N validator processes over TCP, kill and rejoin one
   jurisledger node --genesis G --key K --peers P --store DIR --index I [--listen HOST:PORT]
                                           run one validator (a process per machine in a deployment)
+  jurisledger init --out DIR --validators host:port,... [--issuers a,b] [--min-attestations 2]
+                                          prepare a multi-machine deployment (genesis, peers, per-machine key folders)
   jurisledger keygen [-o FILE]            make a validator or wallet key file
   jurisledger wallet new|register|balance|pay ...   (see jurisledger wallet -h)
   jurisledger snapshot CHAIN.json [-o SNAP.json]  certified state snapshot: join or audit without replaying history
@@ -120,6 +122,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--to"); ap.add_argument("--amount"); ap.add_argument("--purpose")
     ap.add_argument("--name"); ap.add_argument("--role", default="household"); ap.add_argument("--sector", default="")
     ap.add_argument("--pin", help="validator address to pin the TLS certificate to")
+    ap.add_argument("--validators"); ap.add_argument("--issuers", default="")
+    ap.add_argument("--chain-id", default="jurisledger-net"); ap.add_argument("--min-attestations", type=int, default=2)
+    ap.add_argument("--unverified-limit", default="100.00"); ap.add_argument("--recovery-delay", type=int, default=100)
+    ap.add_argument("--treasury", default="1000000.00")
     args = ap.parse_args(argv[1:])
     cmd = args.command
 
@@ -213,6 +219,21 @@ def main(argv: list[str]) -> int:
                 print(f"downloaded and re-audited {chain.height} blocks from {args.paths[0]}; wrote {out}")
         except OSError as err:
             print(f"could not reach {args.paths[0]}: {err}"); return 1
+        return 0
+    if cmd == "init":
+        from .deploy import init
+        from .wallet import parse_amount
+        if not args.validators:
+            print("init needs --validators host:port,host:port,..."); return 2
+        hosts = [h.strip() for h in args.validators.split(",") if h.strip()]
+        issuers = [i.strip() for i in args.issuers.split(",") if i.strip()]
+        made = init(args.out or "net", hosts, issuers, args.chain_id, args.min_attestations,
+                    parse_amount(args.unverified_limit), args.recovery_delay, parse_amount(args.treasury))
+        print(f"prepared a {len(hosts)}-validator network '{args.chain_id}' in {args.out or 'net'}/\n"
+              f"  shared with everyone : genesis.json, peers.json\n"
+              f"  one folder per machine: {made['validators']}  (each holds only its own key + start.sh)\n"
+              f"  keep private          : issuer-*.key.json, treasury.key.json\n"
+              f"On each machine: copy genesis.json, peers.json and its validator-i/ folder, then run validator-i/start.sh")
         return 0
     if cmd == "keygen":
         from .crypto import KeyPair
