@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 — snapshots, encrypted notes, a wallet
+- Certified state snapshots: `Chain.make_snapshot` / `Chain.from_snapshot`, `jurisledger snapshot`; the certificate is checked against trusted validators and the state against the certified `state_root`; the access log is verified against its digest. A chain started from a snapshot keeps accepting blocks and exports normally.
+- Confidential payments carry the recipient's opening encrypted (ECIES over the account's Ed25519 key, AES-256-GCM); `ConfidentialWallet.scan` recovers incoming payments from the chain.
+- `jurisledger wallet new|register|balance|pay`: a command-line wallet against a running validator. Nodes answer `account` queries.
+- Per-source connection rate limiting on validators.
+- 135 tests.
+
 ## 0.8.0 — confidential payments
 - `ec.py`: Ed25519 point arithmetic. `privacy.py` moved from the 2048-bit MODP group to the curve (about ten times faster) and gained bit-decomposition range proofs (32 bits, ~11 kB, ~0.25 s).
 - `SHIELD`, `CONFIDENTIAL_PAYMENT`, `UNSHIELD`: hidden balances as commitments; payments carry range proofs on the amount and on the remaining balance; commitments outside the prime-order subgroup are refused; confidential use requires a verified identity when the network has an identity policy. `ConfidentialWallet` tracks openings and builds proofs. `stats.committed_totals` sums commitments by purpose.

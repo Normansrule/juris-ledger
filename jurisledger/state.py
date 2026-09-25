@@ -124,6 +124,28 @@ class State:
     def copy(self) -> "State":
         return copy.deepcopy(self)
 
+    # -- snapshots -------------------------------------------------------- #
+    FIELDS = ("accounts", "contracts", "access_log", "access_digest", "validators", "slashed",
+              "gov_votes", "evidence_seen", "disputes", "issuers", "policy", "recoveries")
+
+    def to_snapshot(self) -> Dict[str, Any]:
+        """The complete state as plain data.  ``root()`` of the restored state must equal
+        the ``state_root`` of the block it was taken after; the access log is checked
+        against its rolling digest."""
+        return {"chain_id": self.chain_id, **{f: copy.deepcopy(getattr(self, f)) for f in self.FIELDS}}
+
+    @staticmethod
+    def from_snapshot(d: Dict[str, Any]) -> "State":
+        s = State(d["chain_id"])
+        for f in State.FIELDS:
+            setattr(s, f, copy.deepcopy(d[f]))
+        digest = sha256_hex(b"jurisledger-access-log")
+        for entry in s.access_log:
+            digest = sha256_hex(bytes.fromhex(digest) + canonical(entry))
+        if digest != s.access_digest:
+            raise ValueError("snapshot access log does not match its digest")
+        return s
+
     def root(self) -> str:
         return hash_obj({
             "accounts": self.accounts, "contracts": self.contracts, "disputes": self.disputes,

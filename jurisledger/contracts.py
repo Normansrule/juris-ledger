@@ -231,17 +231,40 @@ class ConfidentialWallet:
         self.amount, self.blinding = self.amount + amount, (self.blinding + r) % self.PV.Q
         return self.w.make(T.SHIELD, {"amount": amount, "blinding": hex(r)})
 
-    def pay(self, to: str, amount: int, purpose: str, note: str = "") -> Tuple[T.Transaction, Dict[str, Any]]:
+    def pay(self, to: str, amount: int, purpose: str, encrypt: bool = True) -> Tuple[T.Transaction, Dict[str, Any]]:
+        """Returns the transaction and the secret note.  With ``encrypt`` (default) the note
+        also travels inside the transaction, readable only with the recipient's key."""
         PV = self.PV
         if not 0 < amount <= self.amount:
             raise ValueError("insufficient hidden balance")
         c, op = PV.commit(amount)
         remaining = PV.Opening(self.amount - amount, (self.blinding - op.blinding) % PV.Q)
+        secret = {"amount": amount, "blinding": hex(op.blinding)}
         tx = self.w.make(T.CONFIDENTIAL_PAYMENT, {
             "to": to, "purpose": purpose, "commitment": PV.commitment_hex(c),
-            "proof_amount": PV.range_proof(op), "proof_remaining": PV.range_proof(remaining), "note": note})
+            "proof_amount": PV.range_proof(op), "proof_remaining": PV.range_proof(remaining),
+            "note": PV.encrypt_note(to, secret) if encrypt else ""})
         self.amount, self.blinding = remaining.amount, remaining.blinding
-        return tx, {"amount": amount, "blinding": hex(op.blinding)}
+        return tx, secret
+
+    def scan(self, chain: Any) -> int:
+        """Pick up every confidential payment addressed to us whose note we can decrypt.  Returns the count."""
+        PV = self.PV
+        seen = getattr(self, "_seen", set())
+        found = 0
+        for _, t in chain.iter_txs():
+            if t.kind == T.CONFIDENTIAL_PAYMENT and t.payload.get("to") == self.w.address and t.txid not in seen and t.payload.get("note"):
+                try:
+                    note = PV.decrypt_note(self.w.key.secret_hex(), self.w.address, t.payload["note"])
+                except Exception:
+                    continue
+                if PV.verify_opening(PV.commitment_from_hex(t.payload["commitment"]),
+                                     PV.Opening(note["amount"], int(note["blinding"], 16))):
+                    self.receive(note)
+                    found += 1
+                seen.add(t.txid)
+        self._seen = seen
+        return found
 
     def receive(self, secret_note: Dict[str, Any]) -> None:
         self.amount += secret_note["amount"]

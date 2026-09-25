@@ -11,6 +11,8 @@
   jurisledger node --genesis G --key K --peers P --store DIR --index I [--listen HOST:PORT]
                                           run one validator (a process per machine in a deployment)
   jurisledger keygen [-o FILE]            make a validator or wallet key file
+  jurisledger wallet new|register|balance|pay ...   (see jurisledger wallet -h)
+  jurisledger snapshot CHAIN.json [-o SNAP.json]  certified state snapshot: join or audit without replaying history
   jurisledger status HOST:PORT            height, state digest and mempool of a running validator
   jurisledger export HOST:PORT [-o FILE]  download and re-audit a running validator's ledger
   jurisledger all | NAME                  run every experiment, or one of:
@@ -62,9 +64,14 @@ def cmd_audit(path: str) -> int:
         print(f"Could not read {path} as a ledger export: {err}")
         return 2
     n_tx = sum(len(b.txs) for b in chain.blocks)
-    print(f"VERIFIED. {chain.height} blocks and {n_tx:,} transactions replayed from the founding record of "
-          f"'{chain.chain_id}'.\nEvery signature, Merkle root, state digest and commit certificate checked.\n"
-          f"State digest: {chain.state.root()}")
+    if chain.base_height:
+        print(f"VERIFIED. Snapshot after block {chain.base_height} carries a valid certificate from the genesis "
+              f"validators and matches its certified state digest; {len(chain.blocks)} later blocks and {n_tx:,} "
+              f"transactions replayed on top.\nHistory before block {chain.base_height} is not in this file.")
+    else:
+        print(f"VERIFIED. {chain.height} blocks and {n_tx:,} transactions replayed from the founding record of "
+              f"'{chain.chain_id}'.\nEvery signature, Merkle root, state digest and commit certificate checked.")
+    print(f"State digest: {chain.state.root()}")
     return 0
 
 
@@ -110,6 +117,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--genesis"); ap.add_argument("--key"); ap.add_argument("--peers")
     ap.add_argument("--store"); ap.add_argument("--index", type=int); ap.add_argument("--listen")
     ap.add_argument("--until", type=int, default=None)
+    ap.add_argument("--to"); ap.add_argument("--amount"); ap.add_argument("--purpose")
+    ap.add_argument("--name"); ap.add_argument("--role", default="household"); ap.add_argument("--sector", default="")
+    ap.add_argument("--pin", help="validator address to pin the TLS certificate to")
     args = ap.parse_args(argv[1:])
     cmd = args.command
 
@@ -159,6 +169,33 @@ def main(argv: list[str]) -> int:
         print(f"validator {args.index} listening on {listen[0]}:{listen[1]}", flush=True)
         serve(key, genesis, peers, args.store, listen, until_height=args.until,
               log=lambda m: print(m, flush=True))
+        return 0
+    if cmd == "wallet":
+        from . import wallet as W
+        sub = args.paths[0] if args.paths else ""
+        if sub == "new":
+            return W.cmd_new(args.out or "wallet.json")
+        if sub in ("register", "balance", "pay") and len(args.paths) == 2 and args.key:
+            client, key = W.connect(args.paths[1], args.pin), W.load_key(args.key)
+            try:
+                if sub == "register":
+                    return W.cmd_register(client, key, args.name or "unnamed", args.role, args.sector)
+                if sub == "balance":
+                    return W.cmd_balance(client, key)
+                return W.cmd_pay(client, key, args.to or "", args.amount or "0", args.purpose or "")
+            except OSError as err:
+                print(f"could not reach {args.paths[1]}: {err}"); return 1
+        print(__doc__); return 2
+    if cmd == "snapshot" and len(args.paths) == 1:
+        try:
+            chain = Chain.load(Path(args.paths[0]).read_text())
+        except InvalidBlock as err:
+            print(f"REJECTED. Refusing to snapshot a ledger that does not verify: {err}"); return 1
+        out = args.out or "snapshot.json"
+        snap = chain.make_snapshot()
+        Path(out).write_text(json.dumps({"genesis": chain.genesis, "snapshot": snap, "blocks": []}))
+        print(f"wrote {out}: state after block {chain.height}, certified by {len(snap['votes'])} validator signatures.\n"
+              f"Verify it with: jurisledger audit {out}   (checks the certificate and the state digest)")
         return 0
     if cmd in ("status", "export") and len(args.paths) == 1:
         from .net import Client

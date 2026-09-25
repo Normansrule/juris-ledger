@@ -29,7 +29,7 @@ python -m jurisledger all
 ALL CHECKS PASSED          (101 claims)
 ```
 
-> **Status:** research prototype, version 0.8. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
+> **Status:** research prototype, version 0.9. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
 
 ---
 
@@ -92,6 +92,7 @@ In plain words:
 | A central operator can alter, censor or invent records | Byzantine-fault-tolerant quorum; validators have narrow, checkable powers and lose their seat if caught cheating | `jurisledger/chain.py`, `jurisledger/consensus.py` | `python -m jurisledger attacks` |
 | Simple voting schemes quietly assume the network is reliable | A message-level simulator with an adversary that delays anything: single-phase voting forks with *no* dishonest validator; Tendermint-style two-phase voting with locks survives the same attack and 1,000 random ones The real ledger now runs on it, with every vote signed | `jurisledger/bft.py`, `jurisledger/ledgernet.py` | `asynchrony`, `integration` |
 | Validators that only exist inside one simulator prove nothing about a deployment | Each validator is a separate process with its own key file and on-disk store, speaking signed frames over TCP; a killed node restarts from its store and catches up by re-verifying certificates from peers | `jurisledger/net.py`, `jurisledger/cluster.py` | `jurisledger cluster`, `tests/test_net.py` |
+| Joining or auditing a ledger years old means replaying everything | Certified snapshots: the full state after a block, checked against that block's validator certificate and `state_root`; a new validator or auditor starts there | `jurisledger/chain.py` (`from_snapshot`), `jurisledger snapshot` | `tests/test_snapshot_wallet.py` |
 | Anyone can invent a thousand fake companies; one registrar is a single point of capture | Identity from *several independent issuers* (company registry, tax authority, civil registry…). Unverified accounts are capped; contracts need verified parties; validators can vote an issuer out | `jurisledger/state.py` | `python -m jurisledger identity` |
 | Lose the key, lose everything — unacceptable for a public system | Owners rotate keys; lost keys are recovered by the issuers that know the person, after a waiting period in which the real owner can veto. Contracts, obligations and evidence follow the new key | `jurisledger/state.py`, `jurisledger/legal.py` | `python -m jurisledger identity` |
 | Asymmetric information: each lender, buyer or regulator sees only its own slice | One shared record: a receivable pledged to two banks, or money moving in a circle, is a lookup instead of an investigation | `jurisledger/fraud.py` | `python -m jurisledger fraud` |
@@ -113,9 +114,10 @@ pip install -e ".[dev]"
 jurisledger demo --out demo        # builds a sample ledger; then open demo/register.html in a browser
 jurisledger audit demo/chain.json  # re-verify the whole ledger from its founding record
 jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
+jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
 jurisledger all                    # run all eleven experiments (101 claims)
-python -m pytest                   # 131 tests; every printed claim is also asserted
+python -m pytest                   # 135 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -126,7 +128,8 @@ The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed2
 |---|---|---|
 | A clerk, journalist or citizen | open `register.html` | A browsable public register: contracts and who opened them, obligations and their status, national accounts, review flags, validators. One self-contained file, no server, nothing fetched from the internet |
 | A lawyer, arbitrator or auditor | `jurisledger verify evidence.json validators.json` | A plain-language verdict on one contract — who signed, what was paid and when, what the arbitrator decided — checked offline against validator keys *you* supply. Exit code 0 or 1, so it scripts |
-| An operator | `jurisledger keygen`, `jurisledger node …`, `jurisledger status HOST:PORT` | One validator process per machine, listening on a port, storing blocks on disk; `jurisledger cluster` shows the whole choreography on one machine first |
+| A person paying or being paid | `jurisledger wallet new / register / balance / pay HOST:PORT` | A command-line wallet: amounts in ordinary units, nonce fetched from the node, waits for finality, plain-language errors |
+| An operator | `jurisledger keygen`, `jurisledger node …`, `jurisledger status HOST:PORT`, `jurisledger snapshot` | One validator process per machine, listening on a port, storing blocks on disk; `jurisledger cluster` shows the whole choreography on one machine first |
 | A statistics office, regulator or rival validator | `jurisledger audit chain.json` | The entire ledger replayed from its founding record: every signature, Merkle root, state digest and commit certificate |
 
 ## How it works
@@ -316,7 +319,7 @@ Stated plainly, because a framework that hides its gaps is a sales brochure.
 1. **Off-ledger activity is invisible.** With 30 % of purchases in cash, the ledger captured 87 % of true GDP in our simulation. The ledger measures what is on it, exactly — not the economy, exactly.
 2. **Honest-looking lies.** The protocol checks that a tag fits the *roles* involved, not that a firm's "investment" really was a machine and not a yacht. Cross-checks narrow this; they do not close it.
 3. **Identity is a framework, not a solution.** The ledger enforces *k-of-n independent issuers*, revocation, recovery and governance over issuers. Whether the issuers check documents properly is outside the code, and if *k* issuers collude against an owner who is not watching during the veto window, they win.
-4. **Privacy is real but heavy, and partial.** Hidden amounts with range proofs now work on the ledger (`confidential`), but each payment costs about 22 kB and half a second in pure Python, the recipient must receive the opening off-ledger, and payers, payees and purposes remain public. Bulletproofs, encrypted notes and hidden counterparties are roadmap items. Differential privacy for published statistics is still too noisy for an economy of sixty firms.
+4. **Privacy is real but heavy, and partial.** Hidden amounts with range proofs work on the ledger (`confidential`) and the opening now travels encrypted inside the transaction, but each payment costs about 22 kB and half a second in pure Python, and payers, payees and purposes remain public. Bulletproofs and hidden counterparties are roadmap items.
 5. **Networking is real; deployment hardening is not finished.** Validators run as processes over Transport Layer Security (TLS) 1.3 with each certificate pinned to the validator's own key, peers prove their identity by signing a challenge, and inbound connections are capped. Not done: peer discovery, rate limiting by source, and running across real network distances. Timers are coarse; nothing here is a latency claim.
 6. **Law.** Electronic signatures have legal effect in many places (the United States ESIGN Act and Uniform Electronic Transactions Act, the European Union eIDAS Regulation), but a permanent ledger sits uneasily with data-erasure rights. That is why JurisLedger keeps prose and personal data off-chain. Whether a tribunal admits an evidence file is a question for that tribunal. None of this is legal advice.
 7. **Performance is a prototype's.** Pure Python validates roughly seven thousand transactions per second per core (`jurisledger bench`); that is enough to study the design and not a production figure in either direction.
@@ -338,6 +341,7 @@ jurisledger/
   ledgernet.py     the real chain on signed two-phase consensus; block sync; equivocation evidence
   net.py           validators as processes: TLS transport with key pinning, peer challenge, client, catch-up
   cluster.py       launches N node processes locally and exercises them (pay, kill, rejoin)
+  wallet.py        command-line wallet against a running validator
   contracts.py     wallet helpers, contract vault, audit trail, provenance tree
   legal.py         obligations, compliance, dispute records, offline-verifiable evidence files
   stats.py         GDP three ways, differentially private release
@@ -350,7 +354,7 @@ jurisledger/
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
   experiments.py   the eleven experiments; every claim is a checked boolean
-tests/             131 tests
+tests/             135 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```

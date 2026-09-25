@@ -136,3 +136,44 @@ def verify_range_proof(commitment: Point, proof: Dict) -> bool:
         return product == commitment
     except (KeyError, TypeError, ValueError, IndexError):
         return False
+
+
+# --------------------------------------------------------------------------- #
+# Encrypted notes: the opening of a confidential payment rides inside the transaction
+# --------------------------------------------------------------------------- #
+# ECIES over the account's own Ed25519 key: ephemeral scalar e, shared point e*A,
+# key = SHA-256(shared || ephemeral || recipient), AES-256-GCM.  The recipient's
+# private scalar is derived from its Ed25519 seed exactly as RFC 8032 does.
+def _scalar_from_seed(seed_hex: str) -> int:
+    h = bytearray(hashlib.sha512(bytes.fromhex(seed_hex)).digest()[:32])
+    h[0] &= 248
+    h[31] &= 127
+    h[31] |= 64
+    return int.from_bytes(h, "little")
+
+
+def _note_key(shared: Point, ephemeral: Point, recipient: str) -> bytes:
+    return hashlib.sha256(b"jurisledger/note/v1" + shared.encode() + ephemeral.encode() + bytes.fromhex(recipient)).digest()
+
+
+def encrypt_note(recipient_address: str, note: Dict) -> str:
+    """Returns a hex string only the holder of the recipient's key can open."""
+    import json
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    A = Point.from_hex(recipient_address)
+    e = secrets.randbelow(L)
+    E = G * e
+    key = _note_key(A * e, E, recipient_address)
+    nonce = secrets.token_bytes(12)
+    ct = AESGCM(key).encrypt(nonce, json.dumps(note, sort_keys=True).encode(), E.encode())
+    return (E.encode() + nonce + ct).hex()
+
+
+def decrypt_note(recipient_seed_hex: str, recipient_address: str, blob_hex: str) -> Dict:
+    import json
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    blob = bytes.fromhex(blob_hex)
+    E, nonce, ct = Point.decode(blob[:32]), blob[32:44], blob[44:]
+    a = _scalar_from_seed(recipient_seed_hex)
+    key = _note_key(E * a, E, recipient_address)
+    return json.loads(AESGCM(key).decrypt(nonce, ct, E.encode()))

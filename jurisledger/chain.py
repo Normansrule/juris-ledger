@@ -35,15 +35,56 @@ class Chain:
         self.genesis_hash = hash_obj(genesis)
         self.state = State.from_genesis(genesis)
         self.blocks: List[Block] = []
+        self.base_height, self.base_hash = 0, self.genesis_hash     # non-zero when started from a snapshot
+        self.snapshot: Optional[Dict[str, Any]] = None
 
     # ------------------------------------------------------------------ #
     @property
     def height(self) -> int:
-        return len(self.blocks)
+        return self.base_height + len(self.blocks)
 
     @property
     def tip_hash(self) -> str:
-        return self.blocks[-1].hash if self.blocks else self.genesis_hash
+        return self.blocks[-1].hash if self.blocks else self.base_hash
+
+    def block_at(self, height: int) -> Block:
+        if height <= self.base_height:
+            raise KeyError(f"block {height} is before this chain's snapshot (base height {self.base_height})")
+        return self.blocks[height - self.base_height - 1]
+
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def from_snapshot(genesis: Dict[str, Any], snapshot: Dict[str, Any], validators: List[str]) -> "Chain":
+        """Start from a certified snapshot instead of block 1.
+
+        ``snapshot`` = {"state": ..., "header": ..., "votes": ..., "commit_round": ...}.  The
+        header's certificate is checked against ``validators`` -- a list the verifier
+        already trusts (the genesis validators, or a set it learned through governance) --
+        and the restored state's digest must equal the header's ``state_root``.  This is
+        how a new validator or auditor joins in seconds instead of replaying years.  What
+        a snapshot cannot give you is the history before it: audit trails start at the
+        snapshot's access log, and older blocks must come from an archive.
+        """
+        c = Chain(genesis)
+        header = BlockHeader.from_dict(snapshot["header"])
+        if header.chain_id != c.chain_id:
+            raise InvalidBlock("snapshot is for another chain")
+        msg = vote_message(c.chain_id, header.height, snapshot.get("commit_round", header.round), header.hash)
+        good = sum(1 for v, sig in snapshot["votes"].items() if v in validators and verify(v, msg, sig))
+        if good < quorum(len(validators)):
+            raise InvalidBlock(f"snapshot certificate has {good} valid votes, quorum is {quorum(len(validators))}")
+        state = State.from_snapshot(snapshot["state"])
+        if state.root() != header.state_root:
+            raise InvalidBlock("snapshot state does not match the certified state_root")
+        c.state, c.base_height, c.base_hash, c.snapshot = state, header.height, header.hash, snapshot
+        return c
+
+    def make_snapshot(self) -> Dict[str, Any]:
+        if not self.blocks:
+            raise ValueError("no finalised block to snapshot at")
+        b = self.blocks[-1]
+        return {"state": self.state.to_snapshot(), "header": b.header.to_dict(), "votes": dict(b.votes),
+                "commit_round": b.vote_round}
 
     def expected_proposer(self, height: int, round_: int, state: Optional[State] = None) -> str:
         vals = (state or self.state).validators
@@ -114,7 +155,7 @@ class Chain:
     def iter_txs(self, start: int = 1, end: Optional[int] = None) -> Iterator[Tuple[int, Transaction]]:
         """(height, tx) for every finalised transaction in blocks start..end inclusive."""
         end = self.height if end is None else end
-        for b in self.blocks[start - 1:end]:
+        for b in self.blocks[max(0, start - self.base_height - 1):max(0, end - self.base_height)]:
             for t in b.txs:
                 yield b.header.height, t
 
@@ -131,7 +172,7 @@ class Chain:
         if loc is None:
             raise KeyError("transaction not found")
         height, idx = loc
-        b = self.blocks[height - 1]
+        b = self.block_at(height)
         return {"header": b.header.to_dict(), "votes": dict(b.votes), "commit_round": b.vote_round,
                 "proof": merkle_proof([t.txid for t in b.txs], idx)}
 
@@ -147,9 +188,18 @@ class Chain:
 
     # ------------------------------------------------------------------ #
     def export(self) -> str:
-        return json.dumps({"genesis": self.genesis, "blocks": [b.to_dict() for b in self.blocks]})
+        return json.dumps({"genesis": self.genesis, "snapshot": self.snapshot,
+                           "blocks": [b.to_dict() for b in self.blocks]})
 
     @staticmethod
-    def load(text: str) -> "Chain":
+    def load(text: str, validators: Optional[List[str]] = None) -> "Chain":
+        """Re-verify an export.  If it starts from a snapshot, the snapshot's certificate is
+        checked against ``validators`` (default: the genesis validators)."""
         d = json.loads(text)
-        return Chain.audit(d["genesis"], [Block.from_dict(b) for b in d["blocks"]])
+        blocks = [Block.from_dict(b) for b in d["blocks"]]
+        if d.get("snapshot"):
+            c = Chain.from_snapshot(d["genesis"], d["snapshot"], validators or d["genesis"]["validators"])
+            for b in blocks:
+                c.add_block(b)
+            return c
+        return Chain.audit(d["genesis"], blocks)

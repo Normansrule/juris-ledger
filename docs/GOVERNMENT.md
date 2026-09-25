@@ -87,6 +87,6 @@ Each phase is useful if the next never happens.
 2. Privacy: amounts can now be hidden with range proofs (`confidential`), but counterparties and purposes are public and proofs are large; a state would want Bulletproofs and encrypted notes before general payments.
 3. Finer time: block timestamps are validator-endorsed to within a five-minute tolerance; tighter guarantees need synchronised clocks.
 4. Fees or quotas against spam.
-5. Snapshots and pruning; the audit currently replays everything.
+5. Pruning of old blocks (certified snapshots now exist; archives of pre-snapshot history are the operator's job).
 6. Formal verification of the state machine, and an external security review.
-7. Accessibility and localisation of the register; wallet software.
+7. Accessibility and localisation of the register; a graphical wallet (a command-line one exists).

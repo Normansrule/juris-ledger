@@ -58,6 +58,8 @@ from .storage import BlockStore
 
 IDLE_BLOCK_SECONDS = 2.0     # with an empty mempool the proposer waits this long before proposing an empty block
 MAX_CONNECTIONS = 256        # simultaneous inbound connections per validator
+RATE_WINDOW_SECONDS = 10.0   # per-source connection rate limit: at most RATE_MAX new connections per window
+RATE_MAX = 60
 HELLO_PREFIX = b"jurisledger/peer-hello/v1:"
 TICK_SECONDS = 0.5           # one protocol tick; timeouts are 4 + 2 * round ticks
 MAX_FRAME = 32 * 1024 * 1024
@@ -280,6 +282,8 @@ class Validator:
         self.tls = server_context(self.key)
         self.connections = threading.Semaphore(MAX_CONNECTIONS)
         self.unauthenticated_frames = 0
+        self.rate_limited = 0
+        self._recent: Dict[str, List[float]] = {}
         self.proto: Optional[TwoPhaseBlockNode] = None
         self.future: Dict[int, List[bft.Msg]] = {}
         self.blocks_committed = 0
@@ -348,7 +352,8 @@ class Validator:
                 self.transport.broadcast_raw(obj)               # gossip once
         elif t == "get_blocks":
             start = int(obj.get("from", 1))
-            blocks = [b.to_dict() for b in self.chain.blocks[start - 1:start + 49]]
+            lo = max(0, start - self.chain.base_height - 1)
+            blocks = [b.to_dict() for b in self.chain.blocks[lo:lo + 50]]
             self.transport.send_raw(int(obj["reply_to"]), {"t": "blocks", "blocks": blocks})
         elif t == "blocks":
             before = self.chain.height
@@ -407,9 +412,17 @@ class Validator:
         srv.settimeout(0.5)
         while not self.stop_event.is_set():
             try:
-                conn, _ = srv.accept()
+                conn, (src_ip, _) = srv.accept()
             except socket.timeout:
                 continue
+            now = time.monotonic()
+            recent = [t for t in self._recent.get(src_ip, []) if now - t < RATE_WINDOW_SECONDS]
+            if len(recent) >= RATE_MAX:
+                self.rate_limited += 1
+                conn.close()                                    # this source is opening connections too fast
+                continue
+            recent.append(now)
+            self._recent[src_ip] = recent
             if not self.connections.acquire(blocking=False):
                 conn.close()                                    # over the cap: refuse, do not queue
                 continue
@@ -459,6 +472,15 @@ class Validator:
                     except OSError:
                         return
                     continue
+                if obj.get("t") == "account":
+                    a = self.chain.state.accounts.get(str(obj.get("address")), None)
+                    try:
+                        _send_frame(conn, {"t": "account_reply", "found": a is not None,
+                                           **({k: a[k] for k in ("name", "role", "sector", "balance", "nonce")} if a else {}),
+                                           "hidden": a.get("hidden") if a else None, "height": self.chain.height})
+                    except OSError:
+                        return
+                    continue
                 if obj.get("t") == "export":
                     try:
                         _send_frame(conn, {"t": "export_reply", "chain": self.chain.export()})
@@ -502,6 +524,9 @@ class Client:
     def status(self) -> Dict[str, Any]:
         r = self._call({"t": "status"}, expect_reply=True)
         return r or {}
+
+    def account(self, address: str) -> Dict[str, Any]:
+        return self._call({"t": "account", "address": address}, expect_reply=True) or {}
 
     def export(self) -> Chain:
         r = self._call({"t": "export"}, expect_reply=True)

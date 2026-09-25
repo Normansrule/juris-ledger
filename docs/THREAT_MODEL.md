@@ -44,9 +44,12 @@
 
 | 21 | Someone forges a range proof | Fiat-Shamir Schnorr OR-proofs over a prime-order group with a hash-derived second generator; a proof is bound to its commitment | Relies on the discrete-log assumption on Ed25519 and SHA-512; no formal proof of this implementation |
 
+| 22 | A forged snapshot | A snapshot is accepted only with a quorum certificate from validators the verifier already trusts, and only if the restored state hashes to the certified `state_root`; the access log is checked against its rolling digest | A snapshot hides nothing but also proves nothing about history before it; keep archives |
+
 ## Known gaps
 
-- **Transport.** Connections are TLS 1.3; a validator's certificate is self-signed by its own Ed25519 key and checked by pinning against the genesis, so no certificate authority is involved and a stolen hostname gains nothing. Peers prove key possession by signing a per-connection challenge inside the tunnel; only proven peers may send consensus or block-sync frames, and a peer may only relay under its own index. Inbound connections are capped at 256. Still missing: rate limiting by source address and any defence against volumetric flooding of the listener itself.
+- **Transport.** Connections are TLS 1.3; a validator's certificate is self-signed by its own Ed25519 key and checked by pinning against the genesis, so no certificate authority is involved and a stolen hostname gains nothing. Peers prove key possession by signing a per-connection challenge inside the tunnel; only proven peers may send consensus or block-sync frames, and a peer may only relay under its own index. Inbound connections are capped at 256 and each source address may open at most 60 connections per 10 seconds. Still missing: any defence against volumetric flooding of the listener itself, which is a network-layer job.
+- **Snapshot trust anchor.** `Chain.load` checks a snapshot against the *genesis* validators by default. After governance has changed the validator set, the verifier must supply the current set it trusts, or verify the governance votes from an archive first.
 - **Empty blocks.** An idle proposer waits two seconds and then proposes an empty block, so a quiet ledger still grows. Acceptable for a public register; tune `IDLE_BLOCK_SECONDS` or add a proper idle mode for low-volume deployments.
 - **The one-third bound is a hard limit.** Two colluding validators out of four fork even the two-phase protocol. What remains is accountability: the conflicting signatures are evidence. Choosing validators so that no single interest controls a third of the seats is therefore a governance requirement, not a detail.
 - **No fees or rate limits.** Spam resistance is out of scope.

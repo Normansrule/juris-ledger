@@ -131,4 +131,4 @@ Each is a candidate experiment: state the claim, write the attack, keep the resu
 
 **Result.** Eleven claims pass. A confidential payment is about 22 kB and takes about half a second to prove and about the same to finalise through four validators, all in pure Python. Every attack is rejected. The opened sum verifies against the on-chain total and a false sum does not.
 
-**Does not show.** Hidden counterparties or purposes, encrypted delivery of the opening to the recipient, or constant-time cryptography.
+**Does not show.** Hidden counterparties or purposes, or constant-time cryptography. (Since 0.9 the opening is delivered encrypted inside the transaction; `tests/test_snapshot_wallet.py` covers it.)
