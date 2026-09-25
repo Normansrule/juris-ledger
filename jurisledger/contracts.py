@@ -20,7 +20,7 @@ the same prose, and none can forge a receipt or alter the text undetected.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import tx as T
 from .chain import Chain
@@ -203,3 +203,55 @@ def summary(chain: Chain, contract_id: str) -> Dict[str, Any]:
         "citations": sum(1 for e in trail if e["action"] == "CITE"),
         "cited_by": [chain.state.contracts[i]["title"] for i in cited_by(chain, contract_id)],
     }
+
+
+# --------------------------------------------------------------------------- #
+class ConfidentialWallet:
+    """Tracks the opening of an account's hidden balance and builds the proofs.
+
+    The opening (amount and blinding) is the secret that makes the hidden balance
+    spendable.  Losing it means the hidden funds cannot be proven and are stuck --
+    back it up like the key.  A payment produces a *note* (amount, blinding) that
+    must reach the recipient off-ledger, or encrypted in the transaction's ``note``
+    field (encryption is not implemented here).
+    """
+
+    def __init__(self, wallet: Wallet):
+        from . import privacy as PV
+        self.w, self.PV = wallet, PV
+        self.amount, self.blinding = 0, 0
+
+    @property
+    def opening(self):
+        return self.PV.Opening(self.amount, self.blinding % self.PV.Q)
+
+    def shield(self, amount: int) -> T.Transaction:
+        import secrets
+        r = secrets.randbelow(self.PV.Q)
+        self.amount, self.blinding = self.amount + amount, (self.blinding + r) % self.PV.Q
+        return self.w.make(T.SHIELD, {"amount": amount, "blinding": hex(r)})
+
+    def pay(self, to: str, amount: int, purpose: str, note: str = "") -> Tuple[T.Transaction, Dict[str, Any]]:
+        PV = self.PV
+        if not 0 < amount <= self.amount:
+            raise ValueError("insufficient hidden balance")
+        c, op = PV.commit(amount)
+        remaining = PV.Opening(self.amount - amount, (self.blinding - op.blinding) % PV.Q)
+        tx = self.w.make(T.CONFIDENTIAL_PAYMENT, {
+            "to": to, "purpose": purpose, "commitment": PV.commitment_hex(c),
+            "proof_amount": PV.range_proof(op), "proof_remaining": PV.range_proof(remaining), "note": note})
+        self.amount, self.blinding = remaining.amount, remaining.blinding
+        return tx, {"amount": amount, "blinding": hex(op.blinding)}
+
+    def receive(self, secret_note: Dict[str, Any]) -> None:
+        self.amount += secret_note["amount"]
+        self.blinding = (self.blinding + int(secret_note["blinding"], 16)) % self.PV.Q
+
+    def unshield(self, amount: int) -> T.Transaction:
+        PV = self.PV
+        if not 0 < amount <= self.amount:
+            raise ValueError("insufficient hidden balance")
+        remaining = PV.Opening(self.amount - amount, self.blinding)
+        tx = self.w.make(T.UNSHIELD, {"amount": amount, "proof_remaining": PV.range_proof(remaining)})
+        self.amount = remaining.amount
+        return tx

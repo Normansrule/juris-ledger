@@ -116,9 +116,19 @@ Each is a candidate experiment: state the claim, write the attack, keep the resu
 2. **Validator composition.** Simulate validator sets drawn from interest groups (state, banks, civil society). Which seat allocations keep every single interest under one third?
 3. **Multi-machine run.** `jurisledger node` on four hosts with TLS between them; measure block latency and catch-up time honestly.
 4. **Threshold-encrypted vault.** Prose encrypted; decryption shares released by validators only against a finalised receipt.
-5. **Range proofs.** Add Bulletproofs so committed amounts are provably non-negative, then compute GDP over commitments.
+5. **Bulletproofs.** Replace the 22 kB bit-decomposition proofs with ~700-byte Bulletproofs; then encrypted notes so the opening rides inside the transaction.
 6. **Selective disclosure for audits.** A firm proves to an auditor that its committed payments sum to its declared revenue without opening them.
 7. **Hybrid statistics.** Combine exact on-ledger totals with a survey of the off-ledger remainder; measure the total error against either source alone.
 8. **Input–output tables.** Sector-by-sector intermediate flows fall straight out of the ledger; build the table and test it against the simulator.
 9. **Real-time indicators.** Weekly GDP "nowcasts" by block range, with seasonal patterns injected into the simulator.
 10. **Graph-based fraud scoring.** Replace the fixed tolerance in `circular_flows` with a score that weighs ring size against each firm's normal trade, to cut false positives.
+
+## 6. `confidential` — hidden amounts on the real ledger
+
+**Hypothesis.** Payments can hide their amounts while the ledger still refuses money creation and overspending, and while a statistics office can still verify totals.
+
+**Method.** Three verified accounts shield funds; three confidential payments move value between hidden balances. Attacks: a commitment to a negative amount with a proof for the positive one; an overspend with a fabricated remaining-balance proof; a replay; a shield by an unverified account. Then the statistics office opens only the sum of intermediate payments.
+
+**Result.** Eleven claims pass. A confidential payment is about 22 kB and takes about half a second to prove and about the same to finalise through four validators, all in pure Python. Every attack is rejected. The opened sum verifies against the on-chain total and a false sum does not.
+
+**Does not show.** Hidden counterparties or purposes, encrypted delivery of the opening to the recipient, or constant-time cryptography.

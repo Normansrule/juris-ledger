@@ -47,6 +47,8 @@ def build(out_dir: str, seed: int = 7) -> Dict[str, str]:
     rng = random.Random(seed)
     net = LedgerNetwork.create(genesis, eco.validator_keys,
                                delay=lambda _m: rng.randint(1, 3) if rng.random() < 0.85 else rng.randint(4, 15))
+    import shutil
+    shutil.rmtree(Path(out_dir) / "store", ignore_errors=True)        # the demo is rebuilt from scratch every run
     store = BlockStore.create(Path(out_dir) / "store", genesis)
 
     def settle() -> None:

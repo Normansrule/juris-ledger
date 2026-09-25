@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 — confidential payments
+- `ec.py`: Ed25519 point arithmetic. `privacy.py` moved from the 2048-bit MODP group to the curve (about ten times faster) and gained bit-decomposition range proofs (32 bits, ~11 kB, ~0.25 s).
+- `SHIELD`, `CONFIDENTIAL_PAYMENT`, `UNSHIELD`: hidden balances as commitments; payments carry range proofs on the amount and on the remaining balance; commitments outside the prime-order subgroup are refused; confidential use requires a verified identity when the network has an identity policy. `ConfidentialWallet` tracks openings and builds proofs. `stats.committed_totals` sums commitments by purpose.
+- Fixed during development: the subgroup check reduced the group order modulo itself and would have accepted small-order points; caught by a test.
+- Fix: `jurisledger demo --out DIR` failed when DIR already held a store from an earlier run.
+- New experiment `confidential` (11 claims). Totals: 11 experiments, 101 claims, 131 tests.
+
 ## 0.7.0 — encrypted, authenticated transport
 - Every connection is TLS 1.3. Each validator's certificate is self-signed with its own Ed25519 validator key and verified by pinning against the genesis, so no certificate authority is needed. Peers authenticate by signing a per-connection challenge; only authenticated peers may send consensus or block-sync frames, and only under their own index. Inbound connections are capped. `Client(..., expect_address=)` pins the validator it talks to.
 - 126 tests.

@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
+from . import privacy as PV
 from . import tx as T
 from .block import BlockHeader, vote_message
 from .crypto import hash_obj, sha256_hex, canonical, verify
@@ -161,6 +162,9 @@ class State:
             T.DISPUTE_FILE: self._dispute_file,
             T.DISPUTE_WITHDRAW: self._dispute_withdraw,
             T.DISPUTE_AWARD: self._dispute_award,
+            T.SHIELD: self._shield,
+            T.CONFIDENTIAL_PAYMENT: self._confidential_payment,
+            T.UNSHIELD: self._unshield,
             T.ATTEST: self._attest,
             T.ATTEST_REVOKE: self._attest_revoke,
             T.KEY_ROTATE: self._key_rotate,
@@ -430,6 +434,86 @@ class State:
         d["status"], d["closed_height"] = CLOSED, height
         d["award"] = {"outcome": p["outcome"], "award_hash": p["award_hash"], "height": height,
                       "adjusted": sorted(clean)}
+
+    # -- confidential balances ------------------------------------------ #
+    # Each account may hold, beside its public balance, a *hidden* balance known
+    # only as a Pedersen commitment.  Amounts moved between hidden balances are
+    # never revealed; the range proofs guarantee that nothing negative is ever
+    # transferred and that nobody spends more than they have.  Purpose tags and
+    # counterparties stay public, so statistics can still add the commitments up.
+    _proof_cache: Dict[Tuple[str, str], bool] = {}
+
+    def hidden(self, address: str):
+        h = self.accounts[address].get("hidden")
+        return PV.commitment_from_hex(h) if h else PV.IDENTITY
+
+    def _set_hidden(self, address: str, c) -> None:
+        if c == PV.IDENTITY:
+            self.accounts[address].pop("hidden", None)
+        else:
+            self.accounts[address]["hidden"] = PV.commitment_hex(c)
+
+    @classmethod
+    def _range_ok(cls, commitment, proof: Any) -> bool:
+        key = (PV.commitment_hex(commitment), hash_obj(proof) if isinstance(proof, dict) else "")
+        if key not in cls._proof_cache:
+            if len(cls._proof_cache) > 10_000:
+                cls._proof_cache.clear()
+            cls._proof_cache[key] = PV.verify_range_proof(commitment, proof)
+        return cls._proof_cache[key]
+
+    def _confidential_allowed(self, *addresses: str) -> None:
+        for a in addresses:
+            self._require_verified(a, "use confidential balances")
+
+    def _shield(self, tx: T.Transaction, height: int) -> None:
+        p, acct = tx.payload, self.accounts[tx.sender]
+        amount = p.get("amount")
+        _need(isinstance(amount, int) and not isinstance(amount, bool) and 0 < amount <= PV.MAX_HIDDEN,
+              f"amount must be a positive integer up to {PV.MAX_HIDDEN}")
+        _need(isinstance(p.get("blinding"), str), "blinding must be a hex string")
+        try:
+            blinding = int(p["blinding"], 16)
+        except ValueError:
+            raise InvalidTx("blinding must be a hex string")
+        self._confidential_allowed(tx.sender)
+        _need(acct["balance"] >= amount, "insufficient balance")
+        acct["balance"] -= amount
+        self._set_hidden(tx.sender, self.hidden(tx.sender) + PV.commit(amount, blinding)[0])
+
+    def _confidential_payment(self, tx: T.Transaction, height: int) -> None:
+        p = tx.payload
+        to = p.get("to")
+        _need(to in self.accounts and to != tx.sender, "bad recipient")
+        _need("successor" not in self.accounts[to], "the recipient's key was replaced")
+        purpose = p.get("purpose")
+        _need(purpose in PAYMENT_RULES, f"unknown purpose {purpose}")
+        payer_roles, payee_roles = PAYMENT_RULES[purpose]
+        _need(self.accounts[tx.sender]["role"] in payer_roles, f"a {self.accounts[tx.sender]['role']} cannot pay for {purpose}")
+        _need(self.accounts[to]["role"] in payee_roles, f"a {self.accounts[to]['role']} cannot be paid for {purpose}")
+        note = p.get("note", "")
+        _need(isinstance(note, str) and len(note) <= 1024, "note too long")
+        self._confidential_allowed(tx.sender, to)
+        try:
+            amount_c = PV.commitment_from_hex(p.get("commitment", ""))
+        except (ValueError, TypeError):
+            raise InvalidTx("commitment must be a valid curve point in hex")
+        remaining = self.hidden(tx.sender) - amount_c
+        _need(self._range_ok(amount_c, p.get("proof_amount")), "range proof on the amount is invalid")
+        _need(self._range_ok(remaining, p.get("proof_remaining")),
+              "range proof on the remaining balance is invalid (overspending or a negative amount)")
+        self._set_hidden(tx.sender, remaining)
+        self._set_hidden(to, self.hidden(to) + amount_c)
+
+    def _unshield(self, tx: T.Transaction, height: int) -> None:
+        p, acct = tx.payload, self.accounts[tx.sender]
+        amount = p.get("amount")
+        _need(isinstance(amount, int) and not isinstance(amount, bool) and 0 < amount <= PV.MAX_HIDDEN, "bad amount")
+        remaining = self.hidden(tx.sender) - PV.G * amount
+        _need(self._range_ok(remaining, p.get("proof_remaining")),
+              "range proof on the remaining balance is invalid (withdrawing more than is held)")
+        self._set_hidden(tx.sender, remaining)
+        acct["balance"] += amount
 
     # -- identity: several independent issuers, no single gatekeeper ---- #
     def attestation_count(self, address: str) -> int:

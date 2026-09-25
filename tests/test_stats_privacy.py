@@ -30,7 +30,7 @@ def test_hand_computed_gdp():
 
 
 def test_pedersen_group_and_homomorphism():
-    assert pow(privacy.G, privacy.Q, privacy.P) == 1 and pow(privacy.H, privacy.Q, privacy.P) == 1
+    assert privacy.G.in_subgroup() and privacy.H.in_subgroup() and privacy.G != privacy.H
     (c1, o1), (c2, o2) = privacy.commit(40), privacy.commit(2)
     assert c1 != privacy.commit(40)[0]                                       # hiding: fresh randomness
     assert privacy.verify_opening(privacy.combine([c1, c2]), privacy.aggregate_opening([o1, o2]))

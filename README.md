@@ -26,10 +26,10 @@ python -m jurisledger all
 === Gross Domestic Product (GDP) measured from the ledger ===
   GDP expenditure : $2,196,332.41     ground truth    : $2,196,332.41
   ...
-ALL CHECKS PASSED          (90 claims)
+ALL CHECKS PASSED          (101 claims)
 ```
 
-> **Status:** research prototype, version 0.7. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
+> **Status:** research prototype, version 0.8. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
 
 ---
 
@@ -95,7 +95,8 @@ In plain words:
 | Anyone can invent a thousand fake companies; one registrar is a single point of capture | Identity from *several independent issuers* (company registry, tax authority, civil registry…). Unverified accounts are capped; contracts need verified parties; validators can vote an issuer out | `jurisledger/state.py` | `python -m jurisledger identity` |
 | Lose the key, lose everything — unacceptable for a public system | Owners rotate keys; lost keys are recovered by the issuers that know the person, after a waiting period in which the real owner can veto. Contracts, obligations and evidence follow the new key | `jurisledger/state.py`, `jurisledger/legal.py` | `python -m jurisledger identity` |
 | Asymmetric information: each lender, buyer or regulator sees only its own slice | One shared record: a receivable pledged to two banks, or money moving in a circle, is a lookup instead of an investigation | `jurisledger/fraud.py` | `python -m jurisledger fraud` |
-| A transparent ledger is a surveillance machine | Experimental: amounts hidden in Pedersen commitments whose *total* is still provable; differentially private sector statistics | `jurisledger/privacy.py`, `jurisledger/stats.py` | `python -m jurisledger privacy` |
+| A transparent ledger is a surveillance machine | Confidential balances: amounts are Pedersen commitments on Ed25519; every payment carries range proofs so nothing negative moves and nobody overspends; purposes and parties stay public so statistics can add the commitments up and verify an opened *sum* | `jurisledger/privacy.py`, `jurisledger/ec.py`, `jurisledger/state.py` | `python -m jurisledger confidential` |
+| Publishing sector totals from few firms leaks who paid what | Small-cell suppression and differential privacy on released statistics (experimental; noisy at small scale) | `jurisledger/stats.py` | `python -m jurisledger privacy` |
 
 ---
 
@@ -113,8 +114,8 @@ jurisledger demo --out demo        # builds a sample ledger; then open demo/regi
 jurisledger audit demo/chain.json  # re-verify the whole ledger from its founding record
 jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
-jurisledger all                    # run all ten experiments (90 claims)
-python -m pytest                   # 126 tests; every printed claim is also asserted
+jurisledger all                    # run all eleven experiments (101 claims)
+python -m pytest                   # 131 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -141,6 +142,7 @@ Every change is a signed transaction bound to a network (`chain_id`), an account
 | `CONTRACT_CREATE` / `CONTRACT_SIGN` | A contract's hash, terms, parties and references; each party's signature over the exact text |
 | `CONTRACT_ACCESS` / `CONTRACT_GRANT` | A signed receipt that someone viewed or used a contract; permission for a third party to read a restricted one |
 | `DISPUTE_OPEN` / `DISPUTE_FILE` / `DISPUTE_WITHDRAW` / `DISPUTE_AWARD` | A claim under the contract's arbitration clause, filings by hash, and the arbitrator's bounded decision |
+| `SHIELD` / `CONFIDENTIAL_PAYMENT` / `UNSHIELD` | Move value into a hidden balance, pay a hidden amount (commitment + two range proofs), withdraw a revealed amount |
 | `ATTEST` / `ATTEST_REVOKE` | An accredited issuer vouches for an account (credential kept off-chain, hash on-chain), or withdraws it |
 | `KEY_ROTATE` / `RECOVERY_REQUEST` / `RECOVERY_VETO` / `RECOVERY_FINALIZE` | Moving an account to a new key: by its owner at once, or by its issuers after a veto window |
 | `EVIDENCE` | Proof that a validator signed two different blocks at the same height |
@@ -297,6 +299,7 @@ The detectors report their false positives too; the experiment prints the flags 
 | The network itself (delays, partitions, reordering) | Stall progress while the partition lasts; fork *single-phase* voting | Fork two-phase voting; forge or alter any message | `asynchrony` |
 | One third or more of validators colluding | Fork even two-phase voting among cut-off honest validators | Do it deniably: their conflicting signatures convict them | `asynchrony` |
 | Two thirds or more colluding | Finalise an invalid block among themselves | Make any honest auditor accept it: replay from genesis fails | `Chain.audit` |
+| Holder of a hidden balance | Hide amounts from everyone | Pay a negative amount, overspend, replay, or hide from the statistics *sum*; use hidden balances without a verified identity | `confidential` |
 | Creator of fake identities (Sybil attack) | Register any number of accounts for free | Sign a contract or move more than the cap without *k* independent issuers | `identity` |
 | One corrupt identity issuer | Attest anyone; request recoveries | Make an account verified alone; seize an account (needs *k* issuers *and* the owner's silence through the veto window); survive a validator vote | `identity` |
 | The arbitrator named in a contract | Reduce, postpone or waive a disputed obligation; read the contract (receipted) | Act without a party's claim, decide twice, increase a debt, touch undisputed terms, move money | `disputes` |
@@ -313,7 +316,7 @@ Stated plainly, because a framework that hides its gaps is a sales brochure.
 1. **Off-ledger activity is invisible.** With 30 % of purchases in cash, the ledger captured 87 % of true GDP in our simulation. The ledger measures what is on it, exactly — not the economy, exactly.
 2. **Honest-looking lies.** The protocol checks that a tag fits the *roles* involved, not that a firm's "investment" really was a machine and not a yacht. Cross-checks narrow this; they do not close it.
 3. **Identity is a framework, not a solution.** The ledger enforces *k-of-n independent issuers*, revocation, recovery and governance over issuers. Whether the issuers check documents properly is outside the code, and if *k* issuers collude against an owner who is not watching during the veto window, they win.
-4. **Privacy is unfinished.** The commitment scheme lacks range proofs, and our own experiment shows differential privacy is far too noisy for an economy of sixty firms (about 50 % error at ε = 1). It becomes usable only at national scale.
+4. **Privacy is real but heavy, and partial.** Hidden amounts with range proofs now work on the ledger (`confidential`), but each payment costs about 22 kB and half a second in pure Python, the recipient must receive the opening off-ledger, and payers, payees and purposes remain public. Bulletproofs, encrypted notes and hidden counterparties are roadmap items. Differential privacy for published statistics is still too noisy for an economy of sixty firms.
 5. **Networking is real; deployment hardening is not finished.** Validators run as processes over Transport Layer Security (TLS) 1.3 with each certificate pinned to the validator's own key, peers prove their identity by signing a challenge, and inbound connections are capped. Not done: peer discovery, rate limiting by source, and running across real network distances. Timers are coarse; nothing here is a latency claim.
 6. **Law.** Electronic signatures have legal effect in many places (the United States ESIGN Act and Uniform Electronic Transactions Act, the European Union eIDAS Regulation), but a permanent ledger sits uneasily with data-erasure rights. That is why JurisLedger keeps prose and personal data off-chain. Whether a tribunal admits an evidence file is a question for that tribunal. None of this is legal advice.
 7. **Performance is a prototype's.** Pure Python validates roughly seven thousand transactions per second per core (`jurisledger bench`); that is enough to study the design and not a production figure in either direction.
@@ -339,14 +342,15 @@ jurisledger/
   legal.py         obligations, compliance, dispute records, offline-verifiable evidence files
   stats.py         GDP three ways, differentially private release
   fraud.py         four detectors
-  privacy.py       Pedersen commitments (experimental)
+  ec.py            Ed25519 point arithmetic for commitments
+  privacy.py       Pedersen commitments and bit-decomposition range proofs
   storage.py       durable append-only block store; re-audits on open; survives torn writes
   dashboard.py     the self-contained browsable public register
   demo.py          sample ledger + evidence file + register, for first contact
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
-  experiments.py   the ten experiments; every claim is a checked boolean
-tests/             126 tests
+  experiments.py   the eleven experiments; every claim is a checked boolean
+tests/             131 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```

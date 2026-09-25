@@ -157,3 +157,20 @@ def private_sector_release(report: GDPReport, epsilon: float, clip: int, k_min: 
     for s, total in sorted(totals.items()):
         out[s] = None if counts[s] < k_min else total + laplace(rng, clip / epsilon)
     return out
+
+
+def committed_totals(chain: Chain, start: int = 1, end: Optional[int] = None) -> Dict[str, Dict[str, object]]:
+    """Per purpose: the sum of all confidential payment commitments and their count.
+
+    Whoever holds the openings (the parties, or a statistics office they report to)
+    can open the *sum* with :func:`privacy.aggregate_opening`; anyone can check it
+    against this total without learning a single payment.
+    """
+    from . import privacy as PV
+    out: Dict[str, Dict[str, object]] = {}
+    for _, t in chain.iter_txs(start, end):
+        if t.kind == T.CONFIDENTIAL_PAYMENT:
+            p = out.setdefault(t.payload["purpose"], {"commitment": PV.IDENTITY, "count": 0})
+            p["commitment"] = p["commitment"] + PV.commitment_from_hex(t.payload["commitment"])  # type: ignore[operator]
+            p["count"] += 1  # type: ignore[operator]
+    return out

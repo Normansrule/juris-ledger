@@ -1,52 +1,39 @@
-"""EXPERIMENTAL: hide individual amounts, still prove the total.
+"""Confidential amounts: hide each payment, still prove totals and non-negativity.
 
 A public ledger of every payment is a surveillance machine unless amounts can be
-hidden.  Pedersen commitments (Pedersen 1991) are additively homomorphic:
+hidden.  Pedersen commitments (Pedersen 1991) on the Ed25519 curve are additively
+homomorphic:
 
-    commit(a, r) * commit(b, s) = commit(a + b, r + s)      (mod p)
+    commit(a, r) + commit(b, s) = commit(a + b, r + s)
 
-so anyone can multiply the public commitments of a sector's payments and check
-them against a *single* opened total -- the statistics office learns the sector
-sum, the public learns it is honest, and nobody sees an individual payment.
+so anyone can add up a sector's public commitments and check them against a *single*
+opened total -- the statistics office learns the sum, the public learns it is honest,
+nobody sees an individual payment.
 
-The group is the 2048-bit MODP group 14 of RFC 3526 (a safe prime p = 2q + 1);
-commitments live in the order-q subgroup of quadratic residues.  ``h`` is derived
-by hashing, so nobody knows log_g(h) -- which is what makes commitments binding.
+Homomorphic commitments alone are unsafe: a payer could commit to a negative amount
+and mint money.  :func:`range_proof` closes that: a bit-decomposition proof that a
+commitment hides a value in [0, 2**BITS), one Schnorr OR-proof per bit (Cramer,
+Damgard & Schoenmakers 1994), non-interactive by Fiat-Shamir.
 
-NOT PRODUCTION CRYPTOGRAPHY.  Missing on purpose: range proofs (without them a
-cheater can commit to a negative amount; Bulletproofs fix this), constant-time
-arithmetic, and an elliptic-curve group for speed.  This module exists to make
-the idea runnable and testable.
+Honest costs: a 32-bit proof is about 6 kB and takes roughly 0.3 s to make or verify
+in pure Python.  Bulletproofs would be ~700 bytes and far faster; the guarantee is
+the same.  ``H`` is derived by hashing so nobody knows log_G(H), which is what makes
+commitments binding.  Arithmetic is not constant-time (see ec.py).
 """
 from __future__ import annotations
 
 import hashlib
 import secrets
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple
+from typing import Dict, Iterable, List
 
-P = int(
-    "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74"
-    "020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F1437"
-    "4FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED"
-    "EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF05"
-    "98DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB"
-    "9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B"
-    "E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF695581718"
-    "3995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF", 16)
-Q = (P - 1) // 2
-G = 4                                   # 2^2: a generator of the quadratic-residue subgroup
+from .ec import BASE, IDENTITY, L, Point, hash_to_point
 
-
-def _derive_h() -> int:
-    seed, out, counter = b"jurisledger/pedersen/h/v1", b"", 0
-    while len(out) < 256:
-        out += hashlib.sha256(seed + counter.to_bytes(4, "big")).digest()
-        counter += 1
-    return pow(int.from_bytes(out[:256], "big") % P, 2, P)   # squaring lands in the subgroup
-
-
-H = _derive_h()
+G = BASE
+H = hash_to_point(b"jurisledger/pedersen/h/v2")
+Q = L                                     # group order: blindings live in Z_Q
+BITS = 32
+MAX_HIDDEN = 2 ** BITS - 1               # 42,949,672.95 in cents
 
 
 @dataclass(frozen=True)
@@ -55,23 +42,97 @@ class Opening:
     blinding: int
 
 
-def commit(amount: int, blinding: int | None = None) -> Tuple[int, Opening]:
+def commit(amount: int, blinding: int | None = None):
     """Returns (commitment, opening).  Publish the first, keep the second."""
     r = secrets.randbelow(Q) if blinding is None else blinding % Q
-    return (pow(G, amount % Q, P) * pow(H, r, P)) % P, Opening(amount, r)
+    return G * (amount % Q) + H * r, Opening(amount, r)
 
 
-def verify_opening(commitment: int, opening: Opening) -> bool:
-    return commitment == (pow(G, opening.amount % Q, P) * pow(H, opening.blinding, P)) % P
+def verify_opening(commitment: Point, opening: Opening) -> bool:
+    return commitment == G * (opening.amount % Q) + H * (opening.blinding % Q)
 
 
-def combine(commitments: Iterable[int]) -> int:
-    acc = 1
+def combine(commitments: Iterable[Point]) -> Point:
+    acc = IDENTITY
     for c in commitments:
-        acc = (acc * c) % P
+        acc = acc + c
     return acc
+
+
+def subtract(c_total: Point, c_part: Point) -> Point:
+    """Commitment to (a - b) from commitments to a and b."""
+    return c_total - c_part
 
 
 def aggregate_opening(openings: List[Opening]) -> Opening:
     """What the parties (or a threshold of them) reveal: the total, never the parts."""
     return Opening(sum(o.amount for o in openings), sum(o.blinding for o in openings) % Q)
+
+
+def commitment_hex(c: Point) -> str:
+    return c.hex()
+
+
+def commitment_from_hex(s: str) -> Point:
+    pt = Point.from_hex(s)
+    if not pt.in_subgroup():
+        raise ValueError("commitment is not in the prime-order subgroup")
+    return pt
+
+
+# --------------------------------------------------------------------------- #
+# Range proofs
+# --------------------------------------------------------------------------- #
+def _challenge(*points: Point) -> int:
+    data = b"jurisledger/rangeproof/v2" + b"".join(p.encode() for p in points)
+    return int.from_bytes(hashlib.sha512(data).digest(), "little") % Q
+
+
+def range_proof(opening: Opening) -> Dict:
+    """Prove that ``commit(opening)`` hides a value in [0, 2**BITS).  Prover side."""
+    v, r = opening.amount, opening.blinding % Q
+    if not 0 <= v <= MAX_HIDDEN:
+        raise ValueError("value out of provable range")
+    blindings = [secrets.randbelow(Q) for _ in range(BITS - 1)]
+    blindings.append((r - sum(blindings)) % Q)              # bit blindings sum to r
+    out = []
+    for i in range(BITS):
+        b, ri = (v >> i) & 1, blindings[i]
+        Gi = G * (1 << i)
+        Ci = (Gi if b else IDENTITY) + H * ri
+        y = [Ci, Ci - Gi]                                    # y[b] == H * ri
+        c_fake, s_fake = secrets.randbelow(Q), secrets.randbelow(Q)
+        t_fake = H * s_fake - y[1 - b] * c_fake
+        k = secrets.randbelow(Q)
+        t_real = H * k
+        t = [t_real, t_fake] if b == 0 else [t_fake, t_real]
+        c = _challenge(Ci, t[0], t[1])
+        c_real = (c - c_fake) % Q
+        s_real = (k + c_real * ri) % Q
+        cs = [c_real, c_fake] if b == 0 else [c_fake, c_real]
+        ss = [s_real, s_fake] if b == 0 else [s_fake, s_real]
+        out.append([Ci.hex(), hex(cs[0]), hex(cs[1]), hex(ss[0]), hex(ss[1])])
+    return {"bits": out}
+
+
+def verify_range_proof(commitment: Point, proof: Dict) -> bool:
+    try:
+        bits = proof["bits"]
+        if len(bits) != BITS:
+            return False
+        product = IDENTITY
+        for i, (ch, c0h, c1h, s0h, s1h) in enumerate(bits):
+            Ci = Point.from_hex(ch)
+            c0, c1, s0, s1 = (int(x, 16) for x in (c0h, c1h, s0h, s1h))
+            if not all(0 <= x < Q for x in (c0, c1, s0, s1)):
+                return False
+            Gi = G * (1 << i)
+            y0, y1 = Ci, Ci - Gi
+            t0 = H * s0 - y0 * c0
+            t1 = H * s1 - y1 * c1
+            if (c0 + c1) % Q != _challenge(Ci, t0, t1):
+                return False
+            product = product + Ci
+        return product == commitment
+    except (KeyError, TypeError, ValueError, IndexError):
+        return False

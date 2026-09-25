@@ -31,7 +31,7 @@
 | 10 | Contract host alters text or serves it secretly | Hash mismatch is detected by any reader; the vault interface requires a finalised receipt | A host can leak text out-of-band. Cryptographic fix: encrypt prose, release keys by threshold of validators on receipt (roadmap) |
 | 11 | Non-party reads a restricted contract | `CONTRACT_ACCESS` rejected on-chain, so no receipt exists | Parties can always share text themselves |
 | 12 | Fake identities flood the ledger (Sybil attack) | Registration is free but nearly useless: payments above a cap and all contracts need attestations from *k* independent issuers; government, validator and issuer roles cannot be self-registered; issuers can revoke; validators can vote an issuer out and its attestations stop counting at once | *k* colluding or careless issuers. The ledger cannot check that an issuer checked a passport |
-| 13 | Analyst de-anonymises participants from public payments | Experimental commitments and differentially private releases | **Not solved.** Amounts and counterparties are public in this version |
+| 13 | Analyst reads everyone's payments | Confidential balances: amounts are commitments; range proofs stop negative and overspent transfers; the state refuses commitments outside the prime-order subgroup | Counterparties, purposes and timing are public; the opening travels off-ledger; proofs are large and slow in Python; arithmetic is not constant-time, so keep long-term secrets off measurable hosts |
 | 14 | Someone accuses an honest validator with fabricated evidence | Evidence must contain two *valid* signatures by the accused over *different* headers at the same height and round | None |
 
 | 15 | The arbitrator named in a contract abuses its role | It can act only on an open dispute raised by a party, once, only on obligations in dispute, and only to reduce, postpone or waive; it cannot move money; every read and decision is signed and on record | A corrupt arbitrator can wrongly waive a genuine debt. Remedy is outside the ledger: challenge the award in court, using the evidence file |
@@ -41,6 +41,8 @@
 | 17 | A forged or unsigned consensus vote | Every proposal, prevote and precommit is signed and verified on receipt; announcements of finality are accepted only with a verifiable certificate | None within assumptions |
 | 19 | A validator crashes mid-consensus | It restarts from its store, asks a peer for the blocks it missed, re-verifies each certificate, and rejoins at the current height; the others never stopped (they are a quorum) | Two of four crashing halts the chain until one returns — by design |
 | 18 | The block file is edited on disk, or power fails mid-write | The store re-audits every block when opened; a torn final line is detected and cut off; a block is acknowledged only after it is flushed to disk | Loss of the whole disk: keep replicas (every validator is one) |
+
+| 21 | Someone forges a range proof | Fiat-Shamir Schnorr OR-proofs over a prime-order group with a hash-derived second generator; a proof is bound to its commitment | Relies on the discrete-log assumption on Ed25519 and SHA-512; no formal proof of this implementation |
 
 ## Known gaps
 

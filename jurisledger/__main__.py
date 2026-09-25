@@ -14,7 +14,7 @@
   jurisledger status HOST:PORT            height, state digest and mempool of a running validator
   jurisledger export HOST:PORT [-o FILE]  download and re-audit a running validator's ledger
   jurisledger all | NAME                  run every experiment, or one of:
-      contracts legal disputes identity attacks asynchrony integration gdp fraud privacy
+      contracts legal disputes identity attacks asynchrony integration gdp fraud privacy confidential
 """
 from __future__ import annotations
 
@@ -36,7 +36,8 @@ TITLES = {
     "integration": "The real ledger on signed two-phase consensus",
     "gdp": "Gross Domestic Product (GDP) measured from the ledger",
     "fraud": "Fraud detection on a shared ledger",
-    "privacy": "Confidential amounts and private statistics (experimental)",
+    "privacy": "Commitments and differentially private statistics (experimental)",
+    "confidential": "Confidential payments with range proofs on the real ledger",
 }
 
 

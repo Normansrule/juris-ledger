@@ -10,12 +10,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import consensus as C
 from . import bft, fraud, legal, privacy
+from . import privacy as PV
 from . import state as S
 from . import tx as T
 from .block import Block
 from .chain import Chain, InvalidBlock
 from .consensus import Network
-from .contracts import (ContractVault, VaultError, Wallet, audit_trail, cite, cite_external,
+from .contracts import (ConfidentialWallet, ContractVault, VaultError, Wallet, audit_trail, cite, cite_external,
                         provenance, summary)
 from .crypto import KeyPair, sha256_hex
 from .ledgernet import LedgerNetwork, TwoPhaseBlockNode
@@ -798,7 +799,85 @@ def exp_identity(verbose: bool = True) -> Dict[str, Any]:
     return {"checks": checks}
 
 
+def exp_confidential(verbose: bool = True) -> Dict[str, Any]:
+    """Hidden amounts on the real ledger: nobody sees a payment, everyone can check the books."""
+    import time as _time
+    from .stats import committed_totals
+    m = MiniWorld(issuers=("registry", "tax"), policy={"min_attestations": 2, "unverified_payment_limit": 100_00, "recovery_delay": 3})
+    alice, bakery, mill = m.w["alice"], m.w["bakery"], m.w["mill"]
+    for a in (alice, bakery, mill):
+        m.send(m.issuers["registry"].attest(a.address, "id"), m.issuers["tax"].attest(a.address, "tax"))
+    ca, cb, cm = ConfidentialWallet(alice), ConfidentialWallet(bakery), ConfidentialWallet(mill)
+    checks: List[Check] = []
+
+    m.send(ca.shield(5_000_00), cb.shield(2_000_00))
+    public_before = m.balance("alice")
+    t0 = _time.perf_counter()
+    tx1, note1 = ca.pay(bakery.address, 1_234_56, S.FINAL_CONSUMPTION)
+    prove_ms = (_time.perf_counter() - t0) * 1000
+    t0 = _time.perf_counter()
+    m.send(tx1)
+    block_ms = (_time.perf_counter() - t0) * 1000
+    cb.receive(note1)
+    tx2, note2 = cb.pay(mill.address, 700_00, S.INTERMEDIATE)
+    m.send(tx2); cm.receive(note2)
+    tx3, note3 = cb.pay(mill.address, 1_500_00, S.INTERMEDIATE)
+    m.send(tx3); cm.receive(note3)
+
+    on_chain = json.dumps(tx1.to_dict())
+    checks.append(("the finalised payment reveals payer, payee and purpose, but no amount appears anywhere in it",
+                   m.chain.find_tx(tx1.txid) is not None and "123456" not in on_chain and str(1_234_56) not in on_chain))
+    checks.append(("the payer's public balance is untouched: value moved between hidden balances",
+                   m.balance("alice") == public_before))
+    st = m.chain.state
+    checks.append(("each party's private opening matches the public commitment of their hidden balance",
+                   all(PV.verify_opening(st.hidden(w.address), c.opening) for w, c in ((alice, ca), (bakery, cb), (mill, cm)))))
+
+    # attacks
+    def rejected(wallet: Wallet, tx: T.Transaction) -> bool:
+        m.send(tx); ok = m.chain.find_tx(tx.txid) is None; wallet.resync(m.chain); return ok
+    c_neg, o_neg = PV.commit(-50_00)                 # "pay -50": would credit the payer
+    fake = alice.make(T.CONFIDENTIAL_PAYMENT, {"to": bakery.address, "purpose": S.FINAL_CONSUMPTION,
+                                               "commitment": c_neg.hex(), "proof_amount": PV.range_proof(PV.Opening(50_00, o_neg.blinding)),
+                                               "proof_remaining": PV.range_proof(ca.opening)})
+    checks.append(("a negative hidden amount (money printing) is rejected: the proof cannot match the commitment",
+                   rejected(alice, fake)))
+    c_big, o_big = PV.commit(4_000_00)               # alice holds 3,765.44 hidden
+    fake = alice.make(T.CONFIDENTIAL_PAYMENT, {"to": bakery.address, "purpose": S.FINAL_CONSUMPTION,
+                                               "commitment": c_big.hex(), "proof_amount": PV.range_proof(o_big),
+                                               "proof_remaining": PV.range_proof(PV.Opening(0, 0))})
+    checks.append(("overspending a hidden balance is rejected: the remaining-balance proof fails", rejected(alice, fake)))
+    before = (st.hidden(bakery.address), st.hidden(mill.address), m.chain.height)
+    m.send(tx2)                                      # the identical signed payment again
+    checks.append(("replaying a confidential payment does nothing",
+                   (m.chain.state.hidden(bakery.address), m.chain.state.hidden(mill.address)) == before[:2]))
+    stranger = m.w["auditor"]
+    cs = ConfidentialWallet(stranger)
+    checks.append(("confidential balances require a verified identity (anti-laundering policy)", rejected(stranger, cs.shield(10_00))))
+
+    # statistics without seeing payments
+    totals = committed_totals(m.chain)
+    inter = totals[S.INTERMEDIATE]
+    opening = PV.aggregate_opening([PV.Opening(note2["amount"], int(note2["blinding"], 16)),
+                                    PV.Opening(note3["amount"], int(note3["blinding"], 16))])
+    checks.append(("the statistics office opens only the SUM of intermediate payments, and anyone can verify it",
+                   inter["count"] == 2 and PV.verify_opening(inter["commitment"], opening) and opening.amount == 2_200_00))
+    checks.append(("a false total is rejected", not PV.verify_opening(inter["commitment"], PV.Opening(2_200_01, opening.blinding))))
+
+    m.send(cm.unshield(2_200_00))
+    checks.append(("the recipient withdraws exactly what it was paid back into its public balance",
+                   m.balance("mill") == 1_000_000_00 + 2_200_00 and cm.amount == 0))
+    checks.append(("an outsider re-audits the whole chain, proofs included", Chain.load(m.chain.export()).height == m.chain.height))
+
+    if verbose:
+        print(f"  one confidential payment: {len(on_chain):,} bytes on chain; proving {prove_ms:.0f} ms, "
+              f"finalising through 4 validators {block_ms:.0f} ms (pure Python, 32-bit range proofs)")
+        print(f"  hidden balance commitments: alice {st.hidden(alice.address).hex()[:16]}..., bakery {st.hidden(bakery.address).hex()[:16]}...")
+        print(f"  committed totals by purpose: " + ", ".join(f"{k} x{v['count']}" for k, v in totals.items()))
+    return {"checks": checks}
+
+
 EXPERIMENTS: Dict[str, Callable[..., Dict[str, Any]]] = {
     "contracts": exp_contracts, "legal": exp_legal, "disputes": exp_disputes, "identity": exp_identity, "attacks": exp_attacks, "asynchrony": exp_asynchrony, "integration": exp_integration, "gdp": exp_gdp,
-    "fraud": exp_fraud, "privacy": exp_privacy,
+    "fraud": exp_fraud, "privacy": exp_privacy, "confidential": exp_confidential,
 }

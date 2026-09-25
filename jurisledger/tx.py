@@ -25,6 +25,9 @@ DISPUTE_OPEN = "DISPUTE_OPEN"          # a party files a claim under the contrac
 DISPUTE_FILE = "DISPUTE_FILE"          # a party or the arbitrator files a document (by hash)
 DISPUTE_WITHDRAW = "DISPUTE_WITHDRAW"  # the claimant withdraws
 DISPUTE_AWARD = "DISPUTE_AWARD"        # the named arbitrator decides, within narrow limits
+SHIELD = "SHIELD"                      # move a public amount into a hidden (committed) balance
+CONFIDENTIAL_PAYMENT = "CONFIDENTIAL_PAYMENT"  # pay a hidden amount: commitment + two range proofs
+UNSHIELD = "UNSHIELD"                  # reveal and withdraw an amount from the hidden balance
 ATTEST = "ATTEST"                      # an accredited issuer vouches for an account (credential by hash)
 ATTEST_REVOKE = "ATTEST_REVOKE"        # the issuer withdraws it
 KEY_ROTATE = "KEY_ROTATE"              # the owner moves the account to a new key
@@ -37,7 +40,7 @@ VALIDATOR_VOTE = "VALIDATOR_VOTE"      # validators vote to add / remove a valid
 KINDS = {
     REGISTER, PAYMENT, CONTRACT_CREATE, CONTRACT_SIGN, CONTRACT_ACCESS,
     CONTRACT_GRANT, DISPUTE_OPEN, DISPUTE_FILE, DISPUTE_WITHDRAW, DISPUTE_AWARD,
-    ATTEST, ATTEST_REVOKE, KEY_ROTATE, RECOVERY_REQUEST, RECOVERY_VETO, RECOVERY_FINALIZE,
+    SHIELD, CONFIDENTIAL_PAYMENT, UNSHIELD, ATTEST, ATTEST_REVOKE, KEY_ROTATE, RECOVERY_REQUEST, RECOVERY_VETO, RECOVERY_FINALIZE,
     EVIDENCE, VALIDATOR_VOTE,
 }
 

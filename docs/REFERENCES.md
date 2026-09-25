@@ -30,6 +30,9 @@ An annotated list: each entry says what JurisLedger took from the source. Entrie
 18. Kivinen, T., & Kojo, M. (2003). *RFC 3526: More Modular Exponential (MODP) Diffie-Hellman groups.* — The 2048-bit safe-prime group used for commitments.
 19. Bünz, B., Bootle, J., Boneh, D., Poelstra, A., Wuille, P., & Maxwell, G. (2018). Bulletproofs: Short proofs for confidential transactions and more. *IEEE Symposium on Security and Privacy*. — The range proofs the prototype is missing.
 20. Rundgren, A., Jordan, B., & Erdtman, S. (2020). *RFC 8785: JSON Canonicalization Scheme.* — Motivation for canonical encoding before hashing.
+20a. Cramer, R., Damgård, I., & Schoenmakers, B. (1994). Proofs of partial knowledge and simplified design of witness hiding protocols. *CRYPTO '94*. — The OR-proof used per bit in the range proofs.
+20b. Hisil, H., Wong, K. K.-H., Carter, G., & Dawson, E. (2008). Twisted Edwards curves revisited. *ASIACRYPT 2008*. — Extended coordinates in `ec.py`.
+20c. Fiat, A., & Shamir, A. (1986). How to prove yourself: Practical solutions to identification and signature problems. *CRYPTO '86*. — Making the proofs non-interactive.
 
 ## Contracts and law
 
