@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 — encrypted, authenticated transport
+- Every connection is TLS 1.3. Each validator's certificate is self-signed with its own Ed25519 validator key and verified by pinning against the genesis, so no certificate authority is needed. Peers authenticate by signing a per-connection challenge; only authenticated peers may send consensus or block-sync frames, and only under their own index. Inbound connections are capped. `Client(..., expect_address=)` pins the validator it talks to.
+- 126 tests.
+
 ## 0.6.1
 - Fix: `jurisledger cluster` failed when re-run in the same directory — new keys and genesis were generated but stores from the previous run were reused, so validators crashed on start with "prev_hash does not match". Stale stores and logs are now removed, and a validator refuses to start on a store whose founding record does not match its genesis, with a message saying what to do.
 - The cluster reports which validators exited if no block appears.

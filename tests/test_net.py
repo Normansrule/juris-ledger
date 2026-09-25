@@ -47,3 +47,58 @@ def test_cluster_can_be_rerun_in_the_same_directory(tmp_path):
     out = tmp_path / "c"
     assert run(str(out), n=4, log=lambda *_: None).get("ok")
     assert run(str(out), n=4, log=lambda *_: None).get("ok")
+
+
+def _one_validator(tmp_path):
+    """A single live validator process-in-a-thread, for wire-level tests."""
+    from jurisledger.experiments import MiniWorld
+    from jurisledger.storage import BlockStore
+    from jurisledger.net import Validator, free_ports
+    m = MiniWorld(chain_id="wire-test")
+    port = free_ports(1)[0]
+    store = BlockStore.create(tmp_path / "s", m.genesis)
+    v = Validator(m.vkeys[0], m.genesis, [("127.0.0.1", port)] + [("127.0.0.1", 1)] * 3, store,
+                  ("127.0.0.1", port), log=lambda *_: None)
+    t = threading.Thread(target=v.run, daemon=True)
+    t.start()
+    import time
+    time.sleep(0.5)
+    return m, v, port
+
+
+def test_tls_pinning_rejects_the_wrong_key_and_accepts_the_right_one(tmp_path):
+    from jurisledger.crypto import KeyPair
+    m, v, port = _one_validator(tmp_path)
+    try:
+        assert net.Client("127.0.0.1", port, expect_address=m.vkeys[0].address).status()["height"] >= 0
+        with pytest.raises(net.ssl.SSLError):
+            net.Client("127.0.0.1", port, expect_address=KeyPair.from_seed("impostor").address).status()
+        s = net.tls_connect(("127.0.0.1", port), None)
+        assert s.version() == "TLSv1.3"
+        s.close()
+    finally:
+        v.stop_event.set()
+
+
+def test_unauthenticated_connections_cannot_send_consensus_traffic(tmp_path):
+    m, v, port = _one_validator(tmp_path)
+    try:
+        s = net.tls_connect(("127.0.0.1", port), m.vkeys[0].address)
+        net._recv_frame(s)                                            # challenge ignored: we are a stranger
+        before = v.unauthenticated_frames
+        net._send_frame(s, {"t": "get_blocks", "from": 1, "reply_to": 1})
+        net._send_frame(s, {"t": "hello", "index": 1, "sig": "00" * 64})   # forged hello
+        net._send_frame(s, {"t": "get_blocks", "from": 1, "reply_to": 1})
+        import time
+        time.sleep(0.5)
+        assert v.unauthenticated_frames >= before + 3
+        # a real peer key answering the challenge IS accepted
+        s2 = net.tls_connect(("127.0.0.1", port), m.vkeys[0].address)
+        ch = net._recv_frame(s2)
+        net._send_frame(s2, {"t": "hello", "index": 1, "sig": m.vkeys[1].sign(net.HELLO_PREFIX + bytes.fromhex(ch["nonce"]))})
+        net._send_frame(s2, {"t": "get_blocks", "from": 1, "reply_to": 1})
+        time.sleep(0.5)
+        assert v.unauthenticated_frames == before + 3
+        s.close(); s2.close()
+    finally:
+        v.stop_event.set()

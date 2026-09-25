@@ -17,18 +17,30 @@ Wire messages (all JSON objects with a ``t`` field):
 ``blocks``      the reply
 ``status``      / ``status_reply``  height, state digest, mempool size, validators
 
-Peers are trusted for nothing: a frame that fails signature or certificate checks is
-dropped and counted.  Transport security (encryption, peer authentication at the socket
-level) is *not* provided here; run it over a private network or a TLS tunnel.  A crashed
-node restarts from its store and rejoins by asking peers for the blocks it missed.
+Transport security.  Every connection is Transport Layer Security (TLS) 1.3.  A validator's
+certificate is self-signed with its own Ed25519 validator key, so there is no certificate
+authority to trust: a connecting node checks that the certificate's public key IS the
+validator address listed in the genesis (public-key pinning).  Inside the tunnel the server
+issues a random challenge; a peer proves it holds a validator key by signing it, and only
+authenticated peers may send consensus messages or block-sync traffic.  Wallets and tools
+connect the same way without answering the challenge and may only submit transactions or
+read status.  Connections are capped per listener.
+
+Peers are trusted for nothing beyond that: a frame that fails signature or certificate
+checks is dropped and counted.  A crashed node restarts from its store and rejoins by
+asking peers for the blocks it missed.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import queue
+import secrets
 import socket
+import ssl
 import struct
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -40,11 +52,13 @@ from . import tx as T
 from .block import Block
 from .chain import Chain, InvalidBlock
 from .consensus import Node
-from .crypto import KeyPair
+from .crypto import KeyPair, verify
 from .ledgernet import TwoPhaseBlockNode
 from .storage import BlockStore
 
 IDLE_BLOCK_SECONDS = 2.0     # with an empty mempool the proposer waits this long before proposing an empty block
+MAX_CONNECTIONS = 256        # simultaneous inbound connections per validator
+HELLO_PREFIX = b"jurisledger/peer-hello/v1:"
 TICK_SECONDS = 0.5           # one protocol tick; timeouts are 4 + 2 * round ticks
 MAX_FRAME = 32 * 1024 * 1024
 
@@ -78,6 +92,66 @@ def _recv_exact(sock: socket.socket, n: int) -> Optional[bytes]:
     return buf
 
 
+# --------------------------------------------------------------------------- #
+# TLS with public-key pinning (no certificate authority)
+# --------------------------------------------------------------------------- #
+def make_certificate(key: KeyPair) -> str:
+    """A self-signed X.509 certificate for the validator's own Ed25519 key, plus that key,
+    as one PEM string (written to a private temp file for the ssl module)."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.x509.oid import NameOID
+    priv = key._private
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"validator {key.address[:16]}")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(priv.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=3650)).sign(priv, None))
+    return (cert.public_bytes(serialization.Encoding.PEM)
+            + priv.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                 serialization.NoEncryption())).decode()
+
+
+def server_context(key: KeyPair) -> ssl.SSLContext:
+    f = tempfile.NamedTemporaryFile("w", suffix=".pem", delete=False)
+    os.chmod(f.name, 0o600)
+    f.write(make_certificate(key))
+    f.close()
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+    ctx.load_cert_chain(f.name)
+    os.unlink(f.name)
+    return ctx
+
+
+def client_context() -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE          # no CA: the certificate is checked by pinning, below
+    return ctx
+
+
+def peer_public_key(sock: ssl.SSLSocket) -> str:
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    der = sock.getpeercert(binary_form=True)
+    pub = x509.load_der_x509_certificate(der).public_key()
+    return pub.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+
+
+def tls_connect(addr: Tuple[str, int], expect_address: Optional[str], timeout: float = 2) -> ssl.SSLSocket:
+    """Connect, upgrade to TLS, and refuse to talk unless the certificate belongs to ``expect_address``."""
+    raw = socket.create_connection(addr, timeout=timeout)
+    s = client_context().wrap_socket(raw, server_hostname=addr[0])
+    if expect_address is not None and peer_public_key(s) != expect_address:
+        s.close()
+        raise ssl.SSLError(f"certificate at {addr[0]}:{addr[1]} is not the expected validator key (pinning failed)")
+    s.settimeout(None)
+    return s
+
+
 def msg_to_wire(m: bft.Msg, height: int) -> Dict[str, Any]:
     return {"t": "msg", "h": height, "kind": m.kind, "round": m.round, "value": m.value, "src": m.src,
             "dst": m.dst, "valid_round": m.valid_round, "via": m.via, "sig": m.sig,
@@ -94,8 +168,10 @@ def msg_from_wire(d: Dict[str, Any]) -> bft.Msg:
 # transport: the Sim interface the protocol nodes expect, over sockets
 # --------------------------------------------------------------------------- #
 class Transport:
-    def __init__(self, index: int, peers: List[Tuple[str, int]], inbox: "queue.Queue[Dict[str, Any]]"):
+    def __init__(self, index: int, peers: List[Tuple[str, int]], inbox: "queue.Queue[Dict[str, Any]]",
+                 addresses: Optional[List[str]] = None, key: Optional[KeyPair] = None):
         self.i, self.peers, self.inbox = index, peers, inbox
+        self.addresses, self.key = addresses, key
         self.time, self.flags = 0, {}
         self.height = 0
         self.local: Optional[TwoPhaseBlockNode] = None
@@ -107,10 +183,14 @@ class Transport:
         s = self._socks.get(dst)
         if s is None:
             try:
-                s = socket.create_connection(self.peers[dst], timeout=2)
-                s.settimeout(None)
+                expect = self.addresses[dst] if self.addresses else None
+                s = tls_connect(self.peers[dst], expect)
+                challenge = _recv_frame(s)                       # prove we hold a validator key
+                if self.key is not None and challenge and challenge.get("t") == "challenge":
+                    _send_frame(s, {"t": "hello", "index": self.i,
+                                    "sig": self.key.sign(HELLO_PREFIX + bytes.fromhex(challenge["nonce"]))})
                 self._socks[dst] = s
-            except OSError:
+            except (OSError, ssl.SSLError, ValueError):
                 return None
         return s
 
@@ -196,7 +276,10 @@ class Validator:
             self.inner.commit(b)
         if recovered.height:
             self.log(f"[v{self.index}] resumed from disk at block {recovered.height}")
-        self.transport = Transport(self.index, self.peers, self.inbox)
+        self.transport = Transport(self.index, self.peers, self.inbox, list(self.genesis["validators"]), self.key)
+        self.tls = server_context(self.key)
+        self.connections = threading.Semaphore(MAX_CONNECTIONS)
+        self.unauthenticated_frames = 0
         self.proto: Optional[TwoPhaseBlockNode] = None
         self.future: Dict[int, List[bft.Msg]] = {}
         self.blocks_committed = 0
@@ -232,8 +315,16 @@ class Validator:
             self.log(f"[v{self.index}] committed block {block.header.height} "
                      f"({len(block.txs)} tx, round {block.vote_round}, {len(block.votes)} votes)")
 
+    PEER_ONLY = {"msg", "get_blocks", "blocks", "status_reply"}
+
     def _handle(self, obj: Dict[str, Any]) -> None:
         t = obj.get("t")
+        if t in self.PEER_ONLY and obj.get("_peer") is None:
+            self.unauthenticated_frames += 1                    # consensus traffic needs a proven peer
+            return
+        if t == "msg" and obj.get("via") != obj.get("_peer"):
+            self.unauthenticated_frames += 1                    # a peer may only speak for itself
+            return
         if t == "msg":
             h = obj.get("h", 0)
             if h < self.chain.height + 1:
@@ -319,10 +410,29 @@ class Validator:
                 conn, _ = srv.accept()
             except socket.timeout:
                 continue
+            if not self.connections.acquire(blocking=False):
+                conn.close()                                    # over the cap: refuse, do not queue
+                continue
             threading.Thread(target=self._reader, args=(conn,), daemon=True).start()
         srv.close()
 
-    def _reader(self, conn: socket.socket) -> None:
+    def _reader(self, raw: socket.socket) -> None:
+        try:
+            self._reader_inner(raw)
+        finally:
+            self.connections.release()
+
+    def _reader_inner(self, raw: socket.socket) -> None:
+        try:
+            raw.settimeout(5)
+            conn = self.tls.wrap_socket(raw, server_side=True)
+            conn.settimeout(None)
+            nonce = secrets.token_bytes(32)
+            _send_frame(conn, {"t": "challenge", "nonce": nonce.hex()})
+        except (OSError, ssl.SSLError):
+            raw.close()
+            return
+        peer: Optional[int] = None
         with conn:
             while not self.stop_event.is_set():
                 try:
@@ -331,6 +441,16 @@ class Validator:
                     return
                 if obj is None:
                     return
+                if obj.get("t") == "hello":
+                    idx = obj.get("index")
+                    vals = self.genesis["validators"]
+                    if isinstance(idx, int) and 0 <= idx < len(vals) and idx != self.index and \
+                            verify(vals[idx], HELLO_PREFIX + nonce, str(obj.get("sig", ""))):
+                        peer = idx
+                    else:
+                        self.unauthenticated_frames += 1
+                    continue
+                obj["_peer"] = peer
                 if obj.get("t") == "status" and "reply_to" not in obj:   # a client, not a peer: answer inline
                     try:
                         _send_frame(conn, {"t": "status_reply", "index": self.index, "height": self.chain.height,
@@ -365,11 +485,14 @@ def serve(key: KeyPair, genesis: Dict[str, Any], peers: List[Tuple[str, int]], s
 class Client:
     """Talk to one validator: submit transactions, read status, export the chain."""
 
-    def __init__(self, host: str, port: int):
-        self.addr = (host, port)
+    def __init__(self, host: str, port: int, expect_address: Optional[str] = None):
+        """``expect_address`` pins the validator's key; without it the tunnel is encrypted but
+        the server is not authenticated (fine on localhost, not across a network)."""
+        self.addr, self.expect = (host, port), expect_address
 
     def _call(self, obj: Dict[str, Any], expect_reply: bool) -> Optional[Dict[str, Any]]:
-        with socket.create_connection(self.addr, timeout=5) as s:
+        with tls_connect(self.addr, self.expect, timeout=5) as s:
+            _recv_frame(s)                                      # the challenge; clients need not answer it
             _send_frame(s, obj)
             return _recv_frame(s) if expect_reply else None
 

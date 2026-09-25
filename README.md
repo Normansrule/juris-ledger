@@ -29,7 +29,7 @@ python -m jurisledger all
 ALL CHECKS PASSED          (90 claims)
 ```
 
-> **Status:** research prototype, version 0.6. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
+> **Status:** research prototype, version 0.7. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
 
 ---
 
@@ -114,7 +114,7 @@ jurisledger audit demo/chain.json  # re-verify the whole ledger from its foundin
 jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
 jurisledger all                    # run all ten experiments (90 claims)
-python -m pytest                   # 122 tests; every printed claim is also asserted
+python -m pytest                   # 126 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -293,7 +293,7 @@ The detectors report their false positives too; the experiment prints the flags 
 | One malicious validator | Delay a victim's transaction by about one block; waste a round | Forge, censor permanently, fork honest nodes; equivocation costs it its seat | `attacks` b, f, g |
 | Up to one third of validators offline | Slow the chain | Stop it | `attacks` h |
 | One third or more refusing to vote | Halt the chain | Corrupt it — nothing false is ever finalised | `attacks` h |
-| Someone on the wire | Read every frame; flood connections | Forge a vote or a transaction (all signed); make a node accept a block without a certificate | `test_net.py` |
+| Someone on the wire | Delay or cut connections | Read traffic (TLS 1.3), impersonate a validator (certificate pinned to its key, challenge signed), inject consensus traffic without a validator key, exhaust the listener beyond its cap | `test_net.py` |
 | The network itself (delays, partitions, reordering) | Stall progress while the partition lasts; fork *single-phase* voting | Fork two-phase voting; forge or alter any message | `asynchrony` |
 | One third or more of validators colluding | Fork even two-phase voting among cut-off honest validators | Do it deniably: their conflicting signatures convict them | `asynchrony` |
 | Two thirds or more colluding | Finalise an invalid block among themselves | Make any honest auditor accept it: replay from genesis fails | `Chain.audit` |
@@ -314,7 +314,7 @@ Stated plainly, because a framework that hides its gaps is a sales brochure.
 2. **Honest-looking lies.** The protocol checks that a tag fits the *roles* involved, not that a firm's "investment" really was a machine and not a yacht. Cross-checks narrow this; they do not close it.
 3. **Identity is a framework, not a solution.** The ledger enforces *k-of-n independent issuers*, revocation, recovery and governance over issuers. Whether the issuers check documents properly is outside the code, and if *k* issuers collude against an owner who is not watching during the veto window, they win.
 4. **Privacy is unfinished.** The commitment scheme lacks range proofs, and our own experiment shows differential privacy is far too noisy for an economy of sixty firms (about 50 % error at ε = 1). It becomes usable only at national scale.
-5. **Networking is real but plain.** Validators now run as processes over TCP and survive crashes, but frames are not encrypted and peers are not authenticated at the socket level (every *message* is signed, so forgery still fails; eavesdropping and connection flooding do not). Run it on a private network or behind TLS. Timers are coarse; nothing here is a latency claim.
+5. **Networking is real; deployment hardening is not finished.** Validators run as processes over Transport Layer Security (TLS) 1.3 with each certificate pinned to the validator's own key, peers prove their identity by signing a challenge, and inbound connections are capped. Not done: peer discovery, rate limiting by source, and running across real network distances. Timers are coarse; nothing here is a latency claim.
 6. **Law.** Electronic signatures have legal effect in many places (the United States ESIGN Act and Uniform Electronic Transactions Act, the European Union eIDAS Regulation), but a permanent ledger sits uneasily with data-erasure rights. That is why JurisLedger keeps prose and personal data off-chain. Whether a tribunal admits an evidence file is a question for that tribunal. None of this is legal advice.
 7. **Performance is a prototype's.** Pure Python validates roughly seven thousand transactions per second per core (`jurisledger bench`); that is enough to study the design and not a production figure in either direction.
 8. **National accounts are harder than this.** No inventories, depreciation, imputed rents or financial-intermediation services. See [`docs/ECONOMICS.md`](docs/ECONOMICS.md).
@@ -333,7 +333,7 @@ jurisledger/
   consensus.py     validator nodes, simulated network, Byzantine behaviours
   bft.py           hostile-network laboratory: single-phase versus two-phase (Tendermint-style) voting
   ledgernet.py     the real chain on signed two-phase consensus; block sync; equivocation evidence
-  net.py           validators as processes: TCP transport, client, block catch-up, resume from disk
+  net.py           validators as processes: TLS transport with key pinning, peer challenge, client, catch-up
   cluster.py       launches N node processes locally and exercises them (pay, kill, rejoin)
   contracts.py     wallet helpers, contract vault, audit trail, provenance tree
   legal.py         obligations, compliance, dispute records, offline-verifiable evidence files
@@ -346,7 +346,7 @@ jurisledger/
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
   experiments.py   the ten experiments; every claim is a checked boolean
-tests/             122 tests
+tests/             126 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```
