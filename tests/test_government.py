@@ -118,6 +118,6 @@ def test_explainer_site_is_self_contained_and_covers_every_step():
     html = Path(__file__).resolve().parent.parent / "site" / "index.html"
     text = html.read_text()
     assert "<link" not in text and 'src="http' not in text and "@import" not in text
-    for anchor in ("final", "attack", "contract", "identity", "hidden", "gdp", "fraud"):
+    for anchor in ("final", "attack", "contract", "identity", "hidden", "gdp", "fraud", "evidence"):
         assert f'id="{anchor}"' in text
     assert "prefers-reduced-motion" in text and "prefers-color-scheme" in text

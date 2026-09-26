@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/banner.svg" alt="JurisLedger" width="100%"></p>
 
 <p align="center">
-  <a href="https://normansrule.github.io/juris-ledger/"><b>▶ Open the interactive explainer</b></a> — seven animated, step-by-step simulations you can drive yourself
+  <a href="https://normansrule.github.io/juris-ledger/"><b>▶ Open the interactive explainer</b></a> — eight animated, step-by-step simulations you can drive yourself
   &nbsp;·&nbsp; <a href="#quick-start">Quick start</a> &nbsp;·&nbsp; <a href="#who-can-attack-it-and-how-far-they-get">Threats</a> &nbsp;·&nbsp; <a href="docs/GOVERNMENT.md">Public-sector blueprint</a>
 </p>
 
@@ -13,7 +13,7 @@ JurisLedger is a research framework with working code. It asks one question and 
 
 > *If contracts and payments were recorded on a ledger that no single institution controls, could agreements become harder to forge and easier to prove, could fraud become harder to hide, and could a country measure its own economy more truthfully — without handing anyone a new kind of central power?*
 
-## Seven things you can watch happen
+## Eight things you can watch happen
 
 The [explainer site](https://normansrule.github.io/juris-ledger/) (one self-contained page, also in [`site/index.html`](site/index.html)) walks the life of a single transaction. Each step is interactive and maps to one experiment in this repository:
 
@@ -26,6 +26,7 @@ The [explainer site](https://normansrule.github.io/juris-ledger/) (one self-cont
 | 5. Hidden amounts, honest books | Decompose an amount into 32 bit-commitments; try to pay a negative number | `jurisledger confidential` |
 | 6. The economy, measured | Move purchases into cash and see exactly what the ledger stops seeing | `jurisledger gdp` |
 | 7. Fraud, found | Inject a round-tripping ring and run the detector | `jurisledger fraud` |
+| 8. Prove it to a court | Drop a real evidence file and verify every signature, certificate and Merkle path in the browser; then try four ways to cheat | `jurisledger verify`, `tests/test_site_verifier.py` |
 
 Everything claimed in this README is backed by an experiment you can run in about half a minute:
 
@@ -136,7 +137,7 @@ jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
 jurisledger all                    # run all eleven experiments (101 claims)
-python -m pytest                   # 138 tests; every printed claim is also asserted
+python -m pytest                   # 140 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -146,7 +147,7 @@ The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed2
 | You are | You run | You get |
 |---|---|---|
 | A clerk, journalist or citizen | open `register.html` | A browsable public register: contracts and who opened them, obligations and their status, national accounts, review flags, validators. One self-contained file, no server, nothing fetched from the internet |
-| A lawyer, arbitrator or auditor | `jurisledger verify evidence.json validators.json` | A plain-language verdict on one contract — who signed, what was paid and when, what the arbitrator decided — checked offline against validator keys *you* supply. Exit code 0 or 1, so it scripts |
+| A lawyer, arbitrator or auditor | `jurisledger verify evidence.json validators.json`, or drop the file on the explainer's step 8 — nothing is uploaded | A plain-language verdict on one contract — who signed, what was paid and when, what the arbitrator decided — checked offline against validator keys *you* supply. Exit code 0 or 1, so it scripts |
 | A person paying or being paid | `jurisledger wallet new / register / balance / pay HOST:PORT` | A command-line wallet: amounts in ordinary units, nonce fetched from the node, waits for finality, plain-language errors |
 | An operator | `jurisledger init`, `jurisledger node …`, `jurisledger status HOST:PORT`, `jurisledger snapshot` | One validator process per machine, listening on a port, storing blocks on disk; `jurisledger cluster` shows the whole choreography on one machine first |
 | A statistics office, regulator or rival validator | `jurisledger audit chain.json` | The entire ledger replayed from its founding record: every signature, Merkle root, state digest and commit certificate |
@@ -362,7 +363,8 @@ jurisledger/
   cluster.py       launches N node processes locally and exercises them (pay, kill, rejoin)
   wallet.py        command-line wallet against a running validator
   deploy.py        multi-machine deployment files (genesis, peers, per-machine key folders)
-site/index.html    the interactive explainer (self-contained; deployed to GitHub Pages by .github/workflows/pages.yml)
+site/index.html    the interactive explainer (deployed to GitHub Pages by .github/workflows/pages.yml)
+site/verify.js     the evidence verifier in JavaScript (WebCrypto), tested against the Python one
 assets/banner.svg  animated README banner
   contracts.py     wallet helpers, contract vault, audit trail, provenance tree
   legal.py         obligations, compliance, dispute records, offline-verifiable evidence files
@@ -376,7 +378,7 @@ assets/banner.svg  animated README banner
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
   experiments.py   the eleven experiments; every claim is a checked boolean
-tests/             138 tests
+tests/             140 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```

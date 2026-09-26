@@ -81,6 +81,16 @@ input[type=range]{width:100%;accent-color:var(--ink)}
 .verdict{font-family:var(--serif);font-size:1.5rem;margin:.6rem 0}
 .commands{background:var(--ink);color:var(--paper);border-radius:12px;padding:1.4rem;font-family:var(--mono);font-size:.9rem;overflow-x:auto;line-height:1.8}
 .commands span{opacity:.55}
+.drop{border:2px dashed var(--rule);border-radius:10px;padding:1.2rem;text-align:center;color:var(--ink-2);cursor:pointer;transition:border-color .2s,background .2s}
+.drop.over,.drop:focus-visible{border-color:var(--ink);background:var(--wash);outline:none}
+.timeline{list-style:none;margin:.6rem 0;padding:0;max-height:22rem;overflow:auto}
+.timeline li{display:grid;grid-template-columns:3.4rem 1.4rem 1fr;gap:.4rem;padding:.45rem 0;border-bottom:1px solid var(--rule);opacity:0;transform:translateY(4px);transition:opacity .25s,transform .25s}
+.timeline li.in{opacity:1;transform:none}
+.timeline .blk{font-family:var(--mono);font-size:.8rem;color:var(--ink-2);padding-top:.15rem}
+.timeline .who{color:var(--ink-2);font-size:.85rem}
+.tamper{display:flex;gap:.4rem;flex-wrap:wrap;margin:.4rem 0}
+.tamper .btn{font-size:.85rem;padding:.4rem .8rem}
+.problems{margin:.4rem 0;padding-left:1.1rem;color:var(--seal)}
 footer{padding:3rem 0 5rem;color:var(--ink-2);font-size:.95rem}
 .seal-anim{animation:stamp .5s cubic-bezier(.2,1.4,.4,1) forwards}
 @keyframes stamp{from{transform:scale(2.2) rotate(-25deg);opacity:0}to{transform:scale(1) rotate(-12deg);opacity:1}}
@@ -96,7 +106,7 @@ footer{padding:3rem 0 5rem;color:var(--ink-2);font-size:.95rem}
   <a class="brand" href="#top">JurisLedger</a>
   <nav class="folios" aria-label="Steps">
     <a href="#final">1 A payment becomes final</a><a href="#attack">2 The network is attacked</a><a href="#contract">3 A contract is sealed</a>
-    <a href="#identity">4 Who is anyone</a><a href="#hidden">5 Hidden amounts</a><a href="#gdp">6 The economy, measured</a><a href="#fraud">7 Fraud, found</a>
+    <a href="#identity">4 Who is anyone</a><a href="#hidden">5 Hidden amounts</a><a href="#gdp">6 The economy, measured</a><a href="#fraud">7 Fraud, found</a><a href="#evidence">8 Prove it</a>
   </nav>
 </div></header>
 
@@ -250,18 +260,53 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
   </div>
 </section>
 
+<!-- 8 ------------------------------------------------------------------ -->
+<section class="folio" id="evidence">
+  <div class="head"><div class="num">8</div><div><h2>Prove it to a court</h2>
+  <p>An arbitrator receives one file about one contract. They check it here, in this browser: every signature, every validator certificate, every link to its block. The file never leaves their machine, and they do not have to trust whoever sent it — only the validators' public keys.</p></div></div>
+  <div class="stage">
+    <div>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose an evidence file">
+        <strong>Drop an evidence file here</strong><br>or click to choose one — made by <code>jurisledger demo</code> or <code>legal.evidence_bundle</code>
+        <input type="file" id="evFile" accept=".json,application/json" hidden>
+      </div>
+      <div class="controls"><button class="btn" id="evSample">Use the sample lease</button></div>
+      <label for="evVals" style="display:block;margin-top:1rem"><strong>Validator public keys you trust</strong> (one per line, or paste validators.json)</label>
+      <textarea id="evVals" style="min-height:6rem;font-family:var(--mono);font-size:.8rem" spellcheck="false"></textarea>
+      <div class="controls"><button class="btn" id="evVerify" disabled>Verify</button></div>
+      <h3>Now try to cheat</h3>
+      <div class="tamper" id="tamper">
+        <button class="btn ghost" data-t="amount" disabled>Change a payment amount</button>
+        <button class="btn ghost" data-t="prose" disabled>Swap the contract text</button>
+        <button class="btn ghost" data-t="votes" disabled>Strip validator signatures</button>
+        <button class="btn ghost" data-t="strangers" disabled>Trust the wrong validators</button>
+        <button class="btn ghost" data-t="restore" disabled>Restore the original</button>
+      </div>
+    </div>
+    <div>
+      <div class="verdict" id="evVerdict">No file yet</div>
+      <div class="caption" id="evCap">Load the sample, or drop the <code>evidence-cold-storage-lease.json</code> that <code>jurisledger demo</code> writes, and press <strong>Verify</strong>.</div>
+      <ul class="problems" id="evProblems"></ul>
+      <ol class="timeline" id="evTimeline"></ol>
+      <p style="font-size:.9rem">The same checks run on the command line: <code>jurisledger verify evidence.json validators.json</code>. Both implementations are tested against each other on every commit.</p>
+    </div>
+  </div>
+</section>
+
 <section class="folio">
   <div class="head"><div class="num" aria-hidden="true">&nbsp;</div><div><h2>Run every one of these yourself</h2>
   <p>Each claim on this page is a boolean in the test suite. Tested on Ubuntu with Python 3.10 or newer; the only dependency is the <code>cryptography</code> package.</p></div></div>
   <div class="commands">
 <span># get it</span><br>git clone https://github.com/Normansrule/juris-ledger.git &amp;&amp; cd juris-ledger<br>python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install -e ".[dev]"<br><br>
-<span># the seven steps above, as experiments with checked claims</span><br>jurisledger integration &nbsp;&nbsp;<span># 1</span><br>jurisledger asynchrony &nbsp;&nbsp;&nbsp;<span># 2</span><br>jurisledger contracts &nbsp;&nbsp;&nbsp;&nbsp;<span># 3</span><br>jurisledger identity &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 4</span><br>jurisledger confidential &nbsp;<span># 5</span><br>jurisledger gdp &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 6</span><br>jurisledger fraud &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 7</span><br><br>
+<span># the steps above, as experiments with checked claims</span><br>jurisledger integration &nbsp;&nbsp;<span># 1</span><br>jurisledger asynchrony &nbsp;&nbsp;&nbsp;<span># 2</span><br>jurisledger contracts &nbsp;&nbsp;&nbsp;&nbsp;<span># 3</span><br>jurisledger identity &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 4</span><br>jurisledger confidential &nbsp;<span># 5</span><br>jurisledger gdp &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 6</span><br>jurisledger fraud &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 7</span><br>jurisledger demo --out demo &amp;&amp; jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json &nbsp;<span># 8</span><br><br>
 <span># then the real thing: four validator processes, one killed and revived</span><br>jurisledger cluster --out cluster
   </div>
 </section>
 </main>
 <footer><div class="wrap">JurisLedger is a research prototype under the MIT licence. It is a laboratory, not a payment system; its limitations are part of the result and are listed in the repository. Nothing here is legal advice.</div></footer>
 
+<script src="verify.js"></script>
+<script src="sample-evidence.js"></script>
 <script>
 (() => {
 const $ = s => document.querySelector(s);
@@ -461,6 +506,79 @@ const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++)
   $("#fraudDetect").onclick = () => { if (!ring) return; ["r13", "r35", "r51"].forEach(id => { const e = document.getElementById(id); e.setAttribute("stroke", "var(--seal)"); e.setAttribute("stroke-width", 4); }); [1, 3, 5].forEach(i => document.querySelector("#f" + i + " circle").setAttribute("stroke", "var(--seal)")); $("#fraudCap").innerHTML = `<strong class="bad">Flag: circular flow.</strong> Bakery → Dairy → Farm → Bakery, three hops, amounts within 10% of each other, inside six blocks. On a shared ledger this is a graph search; across three separate sets of books it is an investigation that usually never starts. A flag is a lead for a person, not a verdict.`; };
   $("#fraudReset").onclick = () => { ring = false; draw(); $("#fraudDetect").disabled = true; $("#fraudCap").textContent = "Six firms trade normally. Nothing to see yet."; };
   draw();
+})();
+
+/* ---------- 8: evidence verification in the browser ---------- */
+(async function evidence() {
+  const V = window.JurisVerify;
+  const btnV = $("#evVerify"), tamper = [...document.querySelectorAll("#tamper button")];
+  let original = null, current = null, labels = {};
+  if (!V || !(await V.supported())) {
+    $("#evVerdict").textContent = "This browser cannot check Ed25519 signatures";
+    $("#evCap").innerHTML = "Use a current Chrome, Edge, Firefox or Safari, or run <code>jurisledger verify</code> on the command line.";
+    $("#evSample").disabled = true; return;
+  }
+  const words = { CONTRACT_CREATE: "drafted the contract", CONTRACT_SIGN: "signed it", PAYMENT: "paid", CONTRACT_ACCESS: "opened the text",
+    DISPUTE_OPEN: "opened a dispute", DISPUTE_FILE: "filed a document", DISPUTE_AWARD: "issued the award", DISPUTE_WITHDRAW: "withdrew the dispute", CONTRACT_GRANT: "granted access" };
+  const money = c => (c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function load(bundle, validators) {
+    original = JSON.stringify(bundle); current = JSON.parse(original); labels = bundle.labels || {};
+    if (validators) $("#evVals").value = validators.join("\n");
+    btnV.disabled = false; tamper.forEach(b => b.disabled = false);
+    $("#evVerdict").textContent = "Ready"; $("#evVerdict").className = "verdict";
+    $("#evCap").innerHTML = `Loaded <strong>${(bundle.items || []).length} signed transactions</strong> about one contract. Press <strong>Verify</strong>.`;
+    $("#evTimeline").innerHTML = ""; $("#evProblems").innerHTML = "";
+  }
+  function trusted() {
+    const raw = $("#evVals").value.trim();
+    try { const j = JSON.parse(raw); return Array.isArray(j) ? j : j.validators; } catch (e) {}
+    return raw.split(/\s+/).filter(x => /^[0-9a-f]{64}$/.test(x));
+  }
+  async function run() {
+    btnV.disabled = true; $("#evTimeline").innerHTML = ""; $("#evProblems").innerHTML = "";
+    $("#evVerdict").textContent = "Checking…"; $("#evVerdict").className = "verdict";
+    const list = $("#evTimeline");
+    const report = await V.verifyBundle(current, trusted(), async (done, total, ev) => {
+      $("#evCap").textContent = `Checked ${done} of ${total}: signature, validator certificate, Merkle path.`;
+      if (!ev) return;
+      const li = document.createElement("li");
+      const what = (words[ev.kind] || ev.kind.toLowerCase()) + (ev.kind === "PAYMENT" ? " " + money(ev.detail.amount) : "")
+        + (ev.detail.obligation ? ` (${ev.detail.obligation})` : "") + (ev.detail.outcome ? ` — ${ev.detail.outcome.toLowerCase()}` : "");
+      li.innerHTML = `<span class="blk">block ${ev.height}</span><span class="${ev.ok ? "good" : "bad"}">${ev.ok ? "✓" : "✗"}</span>
+        <span><strong>${(labels[ev.by] || ev.by.slice(0, 10) + "…").replace(/</g, "&lt;")}</strong> ${what}<br><span class="who">${ev.votes} validator signatures · key ${ev.by.slice(0, 8)}…</span></span>`;
+      list.appendChild(li); requestAnimationFrame(() => li.classList.add("in")); await sleep(90);
+    });
+    const v = $("#evVerdict");
+    if (report.valid) {
+      v.textContent = "Verified"; v.className = "verdict good";
+      $("#evCap").innerHTML = `<strong>${report.title}</strong>: every one of the ${report.timeline.length} transactions is signed by its author and finalised by a quorum of the validators you trust. All ${report.parties.length} parties signed the same text` + (report.prose_matches ? ", and the enclosed text is exactly that text." : ".") + " This proves what is in the file; it cannot prove nothing was left out.";
+    } else {
+      v.textContent = "Rejected"; v.className = "verdict bad";
+      $("#evCap").innerHTML = "Do not rely on this file. What failed:";
+      $("#evProblems").innerHTML = report.problems.map(p => `<li>${p.replace(/</g, "&lt;")}</li>`).join("");
+    }
+    btnV.disabled = false;
+  }
+  const choose = $("#evFile"), drop = $("#drop");
+  async function readFile(f) { try { const j = JSON.parse(await f.text()); if (Array.isArray(j) || j.validators) { $("#evVals").value = (Array.isArray(j) ? j : j.validators).join("\n"); $("#evCap").textContent = "Validator keys loaded. Now add the evidence file."; } else load(j); } catch (e) { $("#evVerdict").textContent = "Not an evidence file"; $("#evCap").textContent = "The file is not JSON produced by JurisLedger. Evidence files come from jurisledger demo or legal.evidence_bundle."; } }
+  drop.onclick = () => choose.click(); drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose.click(); } };
+  choose.onchange = () => { for (const f of choose.files) readFile(f); };
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); }; drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); for (const f of e.dataTransfer.files) readFile(f); };
+  $("#evSample").onclick = () => { if (window.JURIS_SAMPLE) load(window.JURIS_SAMPLE.bundle, window.JURIS_SAMPLE.validators); };
+  btnV.onclick = run;
+  tamper.forEach(b => b.onclick = () => {
+    if (!original) return;
+    const t = b.dataset.t;
+    current = JSON.parse(original);                       // each attempt starts from the genuine file
+    if (window.JURIS_SAMPLE && t !== "strangers" && labels === window.JURIS_SAMPLE.bundle.labels) $("#evVals").value = window.JURIS_SAMPLE.validators.join("\n");
+    if (t === "restore") { /* genuine file, genuine keys */ }
+    else if (t === "amount") { const it = current.items.find(i => i.tx.kind === "PAYMENT"); if (it) it.tx.payload.amount = Math.round(it.tx.payload.amount / 10); }
+    else if (t === "prose") { current.prose = (current.prose || "").replace(/\d/, m => String((+m + 1) % 10)); }
+    else if (t === "votes") { current.items.forEach(i => { const e = Object.entries(i.inclusion.votes); i.inclusion.votes = Object.fromEntries(e.slice(0, 1)); }); }
+    else if (t === "strangers") { $("#evVals").value = Array.from({ length: 4 }, (_, k) => (k + 10).toString(16).repeat(64)).join("\n"); }
+    run();
+  });
 })();
 })();
 </script>

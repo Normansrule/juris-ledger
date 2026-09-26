@@ -28,6 +28,9 @@ The United States Uniform Electronic Transactions Act (UETA, 1999) and Electroni
 
 ## 3. What the evidence file does and does not prove
 
+It can be checked two independent ways that are tested against each other on every commit: `jurisledger verify` (Python) and step 8 of the explainer site (JavaScript and the browser's own cryptography). The browser check runs entirely locally; the file is never uploaded. Two implementations that must agree are a small but real defence against a bug in either.
+
+
 Proves, to anyone holding the validators' public keys:
 
 - each enclosed transaction was signed by the stated key and has not been altered;

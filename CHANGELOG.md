@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.0 — prove it in the browser
+- `site/verify.js`: the evidence-file verifier re-implemented with WebCrypto (Ed25519, SHA-256), byte-for-byte compatible canonical JSON, Merkle paths, commit certificates and key-change following.
+- Explainer step 8, "Prove it to a court": drop an evidence file and validators, watch each transaction verify, then try four ways to cheat (edit an amount, swap the text, strip signatures, trust the wrong validators) — each fails for its own reason. A real sample from the demo ledger is included.
+- `tests/test_site_verifier.py` runs the JavaScript verifier under Node and requires it to agree with the Python verifier on genuine and tampered files, including key rotation. CI installs Node 22.
+- 140 tests.
+
 ## 0.11.0 — the explainer
 - `site/index.html`: a self-contained interactive explainer that walks the life of one transaction in seven steps — finality stepper, the partition attack against both voting protocols, a contract whose fingerprint reacts to edits, k-of-n identity with a corrupt issuer, 32-bit range-proof decomposition that refuses negatives, GDP against off-ledger cash, and a fraud ring with a detector. No external scripts, fonts or requests; dark mode and reduced motion respected.
 - GitHub Pages workflow publishes it; README redesigned around it with an animated banner.
