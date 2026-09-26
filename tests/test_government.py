@@ -115,9 +115,13 @@ def test_demo_ledger_is_consistent(demo):
 def test_explainer_site_is_self_contained_and_covers_every_step():
     import re
     from pathlib import Path
-    html = Path(__file__).resolve().parent.parent / "site" / "index.html"
-    text = html.read_text()
-    assert "<link" not in text and 'src="http' not in text and "@import" not in text
+    site = Path(__file__).resolve().parent.parent / "site"
+    text = (site / "index.html").read_text()
+    for page in ("index.html", "explorer.html", "style.css", "verify.js"):
+        body = (site / page).read_text()
+        assert not re.search(r'(src|href)="https?://[^"]*\.(js|css)', body) and "@import" not in body, page
+    assert 'href="style.css"' in text and (site / "explorer.html").exists()
     for anchor in ("final", "attack", "contract", "identity", "hidden", "gdp", "fraud", "evidence"):
         assert f'id="{anchor}"' in text
-    assert "prefers-reduced-motion" in text and "prefers-color-scheme" in text
+    css = (site / "style.css").read_text()
+    assert "prefers-reduced-motion" in css and "prefers-color-scheme" in css

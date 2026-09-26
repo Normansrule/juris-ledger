@@ -69,3 +69,40 @@ def test_committed_site_sample_verifies():
     data = json.loads(text[text.index("=") + 1:].rstrip().rstrip(";"))
     report = legal.verify_evidence_bundle(data["bundle"], data["validators"])
     assert report["valid"] and report["fully_signed"] and report["prose_matches"]
+
+
+@needs_node
+def test_browser_ledger_audit_and_gdp_agree_with_python(tmp_path):
+    from jurisledger.chain import Chain, InvalidBlock
+    from jurisledger.demo import build
+    from jurisledger.stats import gdp
+    made = build(str(tmp_path / "demo"))
+    text = Path(made["chain"]).read_text()
+
+    def js(script, obj):
+        f = tmp_path / "c.json"; f.write_text(json.dumps(obj))
+        return json.loads(subprocess.run([NODE, str(ROOT / "tests/js" / script), str(f)], capture_output=True, text=True, check=True).stdout)
+
+    genuine = json.loads(text)
+    assert js("audit_cli.mjs", genuine)["valid"] is True
+    assert js("gdp_cli.mjs", genuine)["gdp"] == gdp(Chain.load(text)).expenditure
+    tampers = []
+    t = json.loads(text); t["blocks"][4]["txs"][0]["payload"]["amount"] += 1; tampers.append(t)
+    t = json.loads(text); t["blocks"][2]["header"]["prev_hash"] = "00" * 32; tampers.append(t)
+    t = json.loads(text); t["blocks"].pop(3); tampers.append(t)
+    t = json.loads(text); t["blocks"][1]["votes"] = dict(list(t["blocks"][1]["votes"].items())[:1]); tampers.append(t)
+    for t in tampers:
+        assert js("audit_cli.mjs", t)["valid"] is False
+        with pytest.raises(InvalidBlock):
+            Chain.load(json.dumps(t))
+    snap = Chain.load(text)
+    snap_export = {"genesis": snap.genesis, "snapshot": snap.make_snapshot(), "blocks": []}
+    r = js("audit_cli.mjs", snap_export)
+    assert r["valid"] is True and r["base_height"] == snap.height
+
+
+def test_committed_site_sample_chain_audits():
+    from jurisledger.chain import Chain
+    text = (ROOT / "site/sample-chain.js").read_text()
+    body = text[text.index("=") + 1:].rstrip().rstrip(";")
+    assert Chain.load(body).height == 12

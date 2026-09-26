@@ -143,5 +143,92 @@
     return report;
   }
 
-  root.JurisVerify = { canonical, txid, headerHash, verifyBundle, supported, sha256hex, quorum };
+
+  // ---- whole-ledger structural audit ---------------------------------------- //
+  async function merkleRoot(ids) {
+    if (!ids.length) return sha256hex(enc.encode("jurisledger-empty-merkle"));
+    let level = [];
+    for (const id of ids) level.push(await sha256(concat(new Uint8Array([0]), hexToBytes(id))));
+    while (level.length > 1) {
+      const next = [];
+      for (let i = 0; i < level.length; i += 2)
+        next.push(i + 1 < level.length ? await sha256(concat(new Uint8Array([1]), level[i], level[i + 1])) : level[i]);
+      level = next;
+    }
+    return bytesToHex(level[0]);
+  }
+
+  /* Checks everything that can be checked without re-running the state machine:
+   * the hash chain, heights, timestamps, Merkle roots, every transaction signature,
+   * and every commit certificate against the genesis validators.  Balances, nonces
+   * and contract rules are NOT re-executed here -- that is `jurisledger audit`.     */
+  async function auditChain(exported, onBlock) {
+    const g = exported.genesis, validators = g.validators, problems = [];
+    let prevHash = await sha256hex(enc.encode(canonical(g))), prevHeight = 0, prevTime = 0;
+    if (exported.snapshot) {
+      const h = exported.snapshot.header, hash = await headerHash(h);
+      const round = exported.snapshot.commit_round ?? h.round, msg = voteMessage(g.chain_id, h.height, round, hash);
+      let good = 0;
+      for (const [v, sig] of Object.entries(exported.snapshot.votes || {})) if (validators.includes(v) && await edVerify(v, msg, sig)) good++;
+      if (good < quorum(validators.length)) problems.push(`snapshot at block ${h.height}: ${good} valid validator signatures, ${quorum(validators.length)} needed`);
+      prevHash = hash; prevHeight = h.height; prevTime = h.timestamp || 0;
+    }
+    const blocks = exported.blocks || [];
+    let txCount = 0;
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i], h = b.header, hash = await headerHash(h), issues = [];
+      if (h.chain_id !== g.chain_id) issues.push("belongs to another network");
+      if (h.height !== prevHeight + 1) issues.push(`height ${h.height} follows ${prevHeight}`);
+      if (h.prev_hash !== prevHash) issues.push("does not link to the previous block (history was altered)");
+      if ((h.timestamp || 0) < prevTime) issues.push("time runs backwards");
+      const ids = [];
+      let badSigs = 0;
+      for (const t of b.txs) { ids.push(await txid(t)); if (!(await edVerify(t.sender, txSigningBytes(t), t.signature))) badSigs++; }
+      if (badSigs) issues.push(`${badSigs} transaction signature${badSigs > 1 ? "s are" : " is"} invalid`);
+      if ((await merkleRoot(ids)) !== h.tx_root) issues.push("transactions do not match the block's Merkle root");
+      const round = b.commit_round ?? h.round, msg = voteMessage(h.chain_id, h.height, round, hash);
+      let good = 0;
+      for (const [v, sig] of Object.entries(b.votes || {})) if (validators.includes(v) && await edVerify(v, msg, sig)) good++;
+      if (good < quorum(validators.length)) issues.push(`${good} valid validator signatures, ${quorum(validators.length)} needed`);
+      issues.forEach(x => problems.push(`block ${h.height}: ${x}`));
+      txCount += b.txs.length;
+      if (onBlock) await onBlock({ index: i, total: blocks.length, block: b, hash, ids, votes: good, ok: issues.length === 0, issues });
+      prevHash = hash; prevHeight = h.height; prevTime = h.timestamp || 0;
+    }
+    return { valid: problems.length === 0, problems, blocks: blocks.length, transactions: txCount,
+             base_height: exported.snapshot ? exported.snapshot.header.height : 0, chain_id: g.chain_id };
+  }
+
+  // ---- national accounts, expenditure side, from a chain export ------------- //
+  // Mirrors jurisledger/stats.py so the explorer's numbers match `jurisledger gdp`.
+  function accountsOf(exported) {
+    const acc = {};
+    for (const a of exported.genesis.accounts || []) acc[a.address] = { name: a.name, role: a.role, sector: a.sector || "" };
+    for (const i of exported.genesis.issuers || []) acc[i.address] = { name: i.name, role: "issuer", sector: "" };
+    for (const b of exported.blocks || []) for (const t of b.txs) {
+      if (t.kind === "REGISTER" && !acc[t.sender]) acc[t.sender] = { name: t.payload.name, role: t.payload.role, sector: t.payload.sector || "" };
+      if (t.kind === "KEY_ROTATE" && acc[t.sender]) acc[t.payload.new_key] = { ...acc[t.sender] };
+    }
+    return acc;
+  }
+  const GOODS = new Set(["FINAL_CONSUMPTION", "INTERMEDIATE", "INVESTMENT", "GOVERNMENT_PURCHASE", "EXPORT"]);
+  function expenditure(exported, acc) {
+    acc = acc || accountsOf(exported);
+    const r = { C: 0, I: 0, G: 0, X: 0, M: 0, payments: 0 };
+    for (const b of exported.blocks || []) for (const t of b.txs) {
+      if (t.kind !== "PAYMENT") continue;
+      const p = t.payload, amt = p.amount, payer = acc[t.sender] || {}, payee = acc[p.to] || {};
+      r.payments++;
+      if (p.purpose === "FINAL_CONSUMPTION") r.C += amt;
+      else if (p.purpose === "INVESTMENT") r.I += amt;
+      else if (p.purpose === "GOVERNMENT_PURCHASE") r.G += amt;
+      else if (p.purpose === "EXPORT") r.X += amt;
+      else if (p.purpose === "WAGES" && payer.role === "government") r.G += amt;
+      if (GOODS.has(p.purpose) && payee.role === "foreign") r.M += amt;
+    }
+    r.gdp = r.C + r.I + r.G + r.X - r.M;
+    return r;
+  }
+
+  root.JurisVerify = { canonical, txid, headerHash, verifyBundle, auditChain, merkleRoot, accountsOf, expenditure, supported, sha256hex, quorum };
 })(typeof globalThis !== "undefined" ? globalThis : this);

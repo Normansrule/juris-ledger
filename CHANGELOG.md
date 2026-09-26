@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0 — the explorer
+- `site/explorer.html`: drop a `chain.json` (or open the bundled demo republic) and every block is checked in the browser as it animates into a strip — links, heights, timestamps, Merkle roots, every transaction signature and every commit certificate; snapshot-based exports are understood. Then browse blocks, read transactions as plain sentences, filter them, follow one account across the chain, and see GDP by expenditure up to any block. "Alter one old payment" shows exactly which block breaks and why.
+- `verify.js` gained `auditChain`, `merkleRoot`, `accountsOf` and `expenditure`; tests require the structural audit to reject exactly what `Chain.load` rejects on four kinds of tampering and GDP to match `stats.gdp` to the cent.
+- Shared styles moved to `site/style.css`.
+- 142 tests.
+
 ## 0.12.0 — prove it in the browser
 - `site/verify.js`: the evidence-file verifier re-implemented with WebCrypto (Ed25519, SHA-256), byte-for-byte compatible canonical JSON, Merkle paths, commit certificates and key-change following.
 - Explainer step 8, "Prove it to a court": drop an evidence file and validators, watch each transaction verify, then try four ways to cheat (edit an amount, swap the text, strip signatures, trust the wrong validators) — each fails for its own reason. A real sample from the demo ledger is included.

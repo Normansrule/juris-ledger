@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>JurisLedger explorer — check a whole ledger in your browser</title>
+<meta name="description" content="Open a JurisLedger export and watch every block's links, Merkle root, signatures and validator certificate verified locally. Then browse blocks, transactions, accounts and the economy they record.">
+<link rel="stylesheet" href="style.css">
+<style>
+.strip{display:flex;gap:.7rem;overflow-x:auto;padding:1rem .2rem 1.2rem;scroll-snap-type:x proximity;min-height:9.5rem}
+.card{flex:0 0 7.4rem;scroll-snap-align:start;background:var(--sheet);border:1px solid var(--rule);border-radius:10px;padding:.6rem .7rem;cursor:pointer;
+  position:relative;text-align:left;font:inherit;color:inherit;opacity:0;transform:translateX(-10px);transition:opacity .3s,transform .3s,border-color .2s,box-shadow .2s}
+.card.in{opacity:1;transform:none}
+.card:focus-visible,.card.sel{outline:none;border-color:var(--ink);box-shadow:0 0 0 2px var(--ink)}
+.card.hit{box-shadow:0 0 0 3px var(--amber)}
+.card.bad{border-color:var(--seal)}
+.card .h{font-family:var(--serif);font-size:1.35rem;line-height:1}
+.card .m{font-size:.78rem;color:var(--ink-2);margin-top:.25rem}
+.card .ring{position:absolute;top:.5rem;right:.5rem;width:1.1rem;height:1.1rem;border-radius:50%;border:2px solid var(--verified)}
+.card.bad .ring{border-color:var(--seal)}
+.card .ring.stamp{animation:stamp .45s cubic-bezier(.2,1.4,.4,1) forwards}
+.card::before{content:"";position:absolute;left:-.75rem;top:50%;width:.7rem;border-top:1px solid var(--ink-2)}
+.card:first-child::before{display:none}
+.mix{display:flex;height:.4rem;border-radius:2px;overflow:hidden;margin-top:.5rem;background:var(--wash)}
+.mix i{display:block;height:100%}
+.status-line{display:flex;gap:1.5rem;flex-wrap:wrap;align-items:baseline;margin:.4rem 0}
+.status-line b{font-family:var(--serif);font-size:1.4rem;font-weight:500}
+.progress{height:.3rem;background:var(--wash);border-radius:2px;overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:var(--ink);transition:width .2s}
+.stage.even{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+@media (max-width:860px){.stage.even{grid-template-columns:1fr}}
+.split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:1.2rem;margin-top:1.2rem}
+@media (max-width:860px){.split{grid-template-columns:1fr}}
+.panel{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:1.1rem}
+.kv{display:grid;grid-template-columns:10rem 1fr;gap:.3rem .8rem;font-size:.93rem}
+.kv dt{color:var(--ink-2)} .kv dd{margin:0;word-break:break-all}
+.txs{list-style:none;margin:.6rem 0 0;padding:0;max-height:26rem;overflow:auto;border-top:1px solid var(--rule)}
+.txs li{padding:.45rem 0;border-bottom:1px solid var(--rule);font-size:.93rem;display:grid;grid-template-columns:1.3rem 1fr;gap:.4rem}
+.txs li.hit{background:color-mix(in srgb,var(--amber) 12%,transparent)}
+.kind{font-size:.75rem;color:var(--ink-2)}
+.legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.8rem;color:var(--ink-2);margin:.3rem 0}
+.legend span::before{content:"";display:inline-block;width:.7rem;height:.7rem;border-radius:2px;margin-right:.3rem;vertical-align:-.05rem;background:var(--c)}
+.gdprow{display:grid;grid-template-columns:9rem 1fr 7.5rem;gap:.6rem;align-items:center;font-size:.9rem;margin:.35rem 0}
+.gdprow .bar{margin:0}
+.gdprow .n{text-align:right;font-variant-numeric:tabular-nums}
+select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--ink);width:100%}
+.note{font-size:.88rem;color:var(--ink-2);margin-top:1rem}
+.empty{color:var(--ink-2);padding:2rem 0}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="index.html">JurisLedger</a>
+  <nav class="folios" aria-label="Site"><a href="index.html">How it works</a><a href="explorer.html" aria-current="page"><strong>Explore a ledger</strong></a><a href="index.html#evidence">Verify one contract</a><a href="https://github.com/Normansrule/juris-ledger">Code</a></nav>
+</div></header>
+
+<main class="wrap" style="padding-top:2.5rem">
+  <h1 style="font-size:clamp(2rem,5vw,3.4rem)">Check a whole ledger, block by block.</h1>
+  <p class="lead" style="font-size:1.15rem;color:var(--ink-2);max-width:68ch">Open a ledger export and this page re-checks it here, in your browser: every link between blocks, every Merkle root, every transaction signature and every validator certificate. Nothing is uploaded. Then browse what the ledger records.</p>
+
+  <div class="stage even" style="margin-top:1.5rem">
+    <div>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a ledger export">
+        <strong>Drop a chain.json here</strong><br>or click to choose one — written by <code>jurisledger demo</code>, <code>jurisledger export</code> or <code>jurisledger snapshot</code>
+        <input type="file" id="file" accept=".json,application/json" hidden>
+      </div>
+      <div class="controls"><button class="btn" id="sample">Open the demo republic</button><button class="btn ghost" id="tamperBtn" disabled>Alter one old payment</button></div>
+    </div>
+    <div>
+      <div class="verdict" id="verdict">No ledger open</div>
+      <div class="status-line"><span><b id="nBlocks">0</b> blocks</span><span><b id="nTx">0</b> transactions</span><span><b id="nVals">0</b> validators</span></div>
+      <div class="progress" aria-hidden="true"><i id="prog"></i></div>
+      <p class="caption" id="cap" style="min-height:0">The demo republic is twelve blocks and 677 transactions: three periods of an economy, a lease that went to arbitration, a supply contract, and a fraud ring for the detectors to find.</p>
+      <ul class="problems" id="problems"></ul>
+    </div>
+  </div>
+
+  <div class="legend" id="legend" hidden>
+    <span style="--c:#127C6E">household spending</span><span style="--c:#0F1F3D">between firms</span><span style="--c:#B4720C">government</span>
+    <span style="--c:#6B7FA8">wages and taxes</span><span style="--c:#B8302F">contracts and disputes</span><span style="--c:#9AA7B8">other</span>
+  </div>
+  <div class="strip" id="strip" role="listbox" aria-label="Blocks"></div>
+
+  <div class="split" id="split" hidden>
+    <div class="panel">
+      <h2 id="bTitle" style="font-size:1.6rem">Block</h2>
+      <dl class="kv" id="bKv"></dl>
+      <div class="controls" style="margin-top:1rem"><input type="text" id="txFilter" placeholder="Filter: a name, a purpose, an amount" aria-label="Filter transactions"></div>
+      <ul class="txs" id="txs"></ul>
+    </div>
+    <div>
+      <div class="panel">
+        <h2 style="font-size:1.4rem">The economy in this ledger</h2>
+        <p style="font-size:.9rem;color:var(--ink-2)">Gross domestic product by expenditure, up to and including the selected block, computed here from the payments' purpose tags — the same rules as <code>jurisledger gdp</code>, tested to agree to the cent.</p>
+        <div id="gdp"></div>
+      </div>
+      <div class="panel" style="margin-top:1rem">
+        <h2 style="font-size:1.4rem">Follow one account</h2>
+        <select id="acct" aria-label="Account to follow"><option value="">Choose an account…</option></select>
+        <p class="caption" id="acctCap" style="min-height:2rem"></p>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">This page checks the ledger's structure and every signature against the validators named in its founding record. It does not re-run balances, nonces and contract rules; for the complete check run <code>jurisledger audit chain.json</code>. A ledger whose validator set changed by governance vote may show certificate warnings here that the full audit accepts.</p>
+</main>
+<footer><div class="wrap">JurisLedger is a research prototype under the MIT licence. Nothing here is legal advice.</div></footer>
+
+<script src="verify.js"></script>
+<script>
+(async () => {
+const $ = s => document.querySelector(s), V = window.JurisVerify;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const money = c => (c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const COLORS = { hh: "#127C6E", firm: "#0F1F3D", gov: "#B4720C", wage: "#6B7FA8", legal: "#B8302F", other: "#9AA7B8" };
+let chain = null, pristine = null, acc = {}, results = [], selected = -1, follow = "";
+
+if (!V || !(await V.supported())) { $("#verdict").textContent = "This browser cannot check Ed25519 signatures"; $("#cap").innerHTML = "Use a current Chrome, Edge, Firefox or Safari, or run <code>jurisledger audit</code>."; $("#sample").disabled = true; return; }
+
+const name = a => (acc[a] && acc[a].name) || (a ? a.slice(0, 10) + "…" : "?");
+function category(t) {
+  if (t.kind === "PAYMENT") { const p = t.payload.purpose; return p === "FINAL_CONSUMPTION" ? "hh" : p === "WAGES" || p === "TAX" || p === "TRANSFER" ? "wage" : p === "GOVERNMENT_PURCHASE" ? "gov" : "firm"; }
+  if (t.kind.startsWith("CONTRACT") || t.kind.startsWith("DISPUTE")) return "legal";
+  return "other";
+}
+function sentence(t) {
+  const p = t.payload || {}, who = `<strong>${esc(name(t.sender))}</strong>`;
+  switch (t.kind) {
+    case "PAYMENT": return `${who} paid ${esc(name(p.to))} <strong>${money(p.amount)}</strong> <span class="kind">${esc(p.purpose.toLowerCase().replace(/_/g, " "))}${p.obligation ? " · " + esc(p.obligation) : ""}${p.contract ? " · under a contract" : ""}</span>`;
+    case "CONFIDENTIAL_PAYMENT": return `${who} paid ${esc(name(p.to))} a <strong>hidden amount</strong> <span class="kind">${esc(p.purpose.toLowerCase().replace(/_/g, " "))}</span>`;
+    case "CONTRACT_CREATE": return `${who} drafted <strong>${esc(p.title)}</strong> <span class="kind">${p.parties.length} parties · ${esc(p.visibility || "public")}</span>`;
+    case "CONTRACT_SIGN": return `${who} signed a contract`;
+    case "CONTRACT_ACCESS": return `${who} ${p.action === "VIEW" ? "opened" : "used"} a contract <span class="kind">${esc(p.context || "")}</span>`;
+    case "DISPUTE_OPEN": return `${who} opened a dispute`;
+    case "DISPUTE_FILE": return `${who} filed a document <span class="kind">${esc(p.note || "")}</span>`;
+    case "DISPUTE_AWARD": return `${who} issued an award: <strong>${esc((p.outcome || "").toLowerCase())}</strong>`;
+    case "ATTEST": return `${who} vouched for ${esc(name(p.subject))}`;
+    case "REGISTER": return `${who} registered as ${esc(p.role)}`;
+    case "VALIDATOR_VOTE": return `${who} voted: ${esc(p.action)}`;
+    case "EVIDENCE": return `${who} proved that ${esc(name(p.validator))} signed two blocks`;
+    default: return `${who} · ${esc(t.kind.toLowerCase().replace(/_/g, " "))}`;
+  }
+}
+
+function reset() {
+  $("#strip").innerHTML = ""; $("#problems").innerHTML = ""; $("#prog").style.width = "0";
+  $("#split").hidden = true; $("#legend").hidden = true; results = []; selected = -1;
+}
+async function open(exported, label) {
+  chain = exported; reset();
+  acc = V.accountsOf(chain);
+  $("#nVals").textContent = chain.genesis.validators.length; $("#nBlocks").textContent = "0"; $("#nTx").textContent = "0";
+  $("#verdict").textContent = "Checking…"; $("#verdict").className = "verdict";
+  $("#cap").textContent = `Opened ${label}. Each block appears as it is verified.`;
+  $("#legend").hidden = false;
+  let tx = 0;
+  const sel = $("#acct"); sel.innerHTML = '<option value="">Choose an account…</option>' + Object.entries(acc)
+    .filter(([, v]) => !["validator", "issuer"].includes(v.role)).sort((a, b) => a[1].name.localeCompare(b[1].name))
+    .map(([a, v]) => `<option value="${a}">${esc(v.name)} (${esc(v.role)})</option>`).join("");
+  const report = await V.auditChain(chain, async r => {
+    results.push(r); tx += r.block.txs.length;
+    $("#nBlocks").textContent = r.index + 1; $("#nTx").textContent = tx.toLocaleString();
+    $("#prog").style.width = ((r.index + 1) / r.total * 100) + "%";
+    addCard(r);
+    if (!reduced) await new Promise(res => setTimeout(res, 110));
+  });
+  const v = $("#verdict");
+  if (report.valid) {
+    v.textContent = "Verified"; v.className = "verdict good";
+    $("#cap").innerHTML = `Every block links to the one before it, every transaction is signed by its author and sits under its block's Merkle root, and every block carries signatures from more than two thirds of the ${chain.genesis.validators.length} validators.` + (report.base_height ? ` The ledger starts from a certified snapshot at block ${report.base_height}.` : "");
+  } else {
+    v.textContent = "Rejected"; v.className = "verdict bad";
+    $("#cap").textContent = "This ledger has been altered or was never finalised. What failed:";
+    $("#problems").innerHTML = report.problems.slice(0, 12).map(p => `<li>${esc(p)}</li>`).join("") + (report.problems.length > 12 ? `<li>…and ${report.problems.length - 12} more</li>` : "");
+  }
+  $("#split").hidden = false; select(results.length - 1);
+}
+
+function addCard(r) {
+  const b = r.block, h = b.header, card = document.createElement("button");
+  card.className = "card" + (r.ok ? "" : " bad"); card.setAttribute("role", "option"); card.dataset.i = r.index;
+  const mix = {}; b.txs.forEach(t => { const c = category(t); mix[c] = (mix[c] || 0) + 1; });
+  const when = h.timestamp ? new Date(h.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  card.innerHTML = `<span class="ring stamp"></span><div class="h">${h.height}</div><div class="m">${b.txs.length} tx · ${r.votes} sig${when ? " · " + when : ""}</div>
+    <div class="mix">${Object.entries(mix).map(([c, n]) => `<i style="width:${n / b.txs.length * 100}%;background:${COLORS[c]}"></i>`).join("")}</div>`;
+  card.onclick = () => select(r.index);
+  card.onkeydown = e => { if (e.key === "ArrowRight") select(Math.min(results.length - 1, r.index + 1), true); if (e.key === "ArrowLeft") select(Math.max(0, r.index - 1), true); };
+  $("#strip").appendChild(card); requestAnimationFrame(() => card.classList.add("in"));
+  card.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest", inline: "end" });
+  if (follow && b.txs.some(t => involves(t, follow))) card.classList.add("hit");
+}
+
+function select(i, focus) {
+  if (i < 0 || !results[i]) return;
+  selected = i; const r = results[i], b = r.block, h = b.header;
+  document.querySelectorAll(".card").forEach(c => c.classList.toggle("sel", +c.dataset.i === i));
+  if (focus) document.querySelector(`.card[data-i="${i}"]`).focus();
+  $("#bTitle").textContent = `Block ${h.height}`;
+  const kv = [
+    ["Status", r.ok ? '<span class="good">verified</span>' : `<span class="bad">${esc(r.issues.join("; "))}</span>`],
+    ["Proposed by", esc(name(h.proposer))],
+    ["Rounds", `proposed in round ${h.round}, finalised in round ${b.commit_round ?? h.round}`],
+    ["Signatures", `${r.votes} of ${chain.genesis.validators.length} validators (${V.quorum(chain.genesis.validators.length)} needed)`],
+    ["Time", h.timestamp ? new Date(h.timestamp).toLocaleString() : "—"],
+    ["Fingerprint", `<code>${r.hash}</code>`], ["Links to", `<code>${h.prev_hash}</code>`], ["Merkle root", `<code>${h.tx_root}</code>`],
+  ];
+  $("#bKv").innerHTML = kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  renderTxs(); renderGdp();
+}
+function involves(t, a) { const p = t.payload || {}; return t.sender === a || p.to === a || p.subject === a || (p.parties || []).includes(a); }
+function renderTxs() {
+  const r = results[selected]; if (!r) return;
+  const q = $("#txFilter").value.trim().toLowerCase();
+  const rows = r.block.txs.map(t => ({ t, html: sentence(t) })).filter(x => !q || x.html.toLowerCase().replace(/<[^>]+>/g, "").includes(q));
+  $("#txs").innerHTML = rows.length ? rows.map(x => `<li class="${follow && involves(x.t, follow) ? "hit" : ""}"><span class="good">✓</span><span>${x.html}</span></li>`).join("")
+    : `<li class="empty">No transactions in block ${r.block.header.height} match “${esc(q)}”.</li>`;
+}
+function renderGdp() {
+  const upTo = { genesis: chain.genesis, blocks: chain.blocks.slice(0, selected + 1) };
+  const g = V.expenditure(upTo, acc), max = Math.max(g.C, g.I, g.G, g.X, g.M, 1);
+  const row = (label, v, cls = "") => `<div class="gdprow"><span>${label}</span><div class="bar"><i class="${cls}" style="width:${v / max * 100}%"></i></div><span class="n">${money(v)}</span></div>`;
+  $("#gdp").innerHTML = row("Consumption (C)", g.C) + row("Investment (I)", g.I) + row("Government (G)", g.G) + row("Exports (X)", g.X) + row("Imports (M)", g.M, "miss")
+    + `<div class="gdprow" style="border-top:1px solid var(--rule);padding-top:.5rem"><strong>GDP</strong><span></span><strong class="n">${money(g.gdp)}</strong></div><p style="font-size:.85rem;color:var(--ink-2);margin:.2rem 0 0">C + I + G + X − M, from ${g.payments} payments through block ${results[selected].block.header.height}.</p>`;
+}
+$("#txFilter").oninput = renderTxs;
+$("#acct").onchange = e => {
+  follow = e.target.value; const hits = [];
+  results.forEach(r => { const on = !!follow && r.block.txs.some(t => involves(t, follow)); document.querySelector(`.card[data-i="${r.index}"]`).classList.toggle("hit", on); if (on) hits.push(r.block.header.height); });
+  let paid = 0, received = 0; if (follow) chain.blocks.forEach(b => b.txs.forEach(t => { if (t.kind === "PAYMENT") { if (t.sender === follow) paid += t.payload.amount; if (t.payload.to === follow) received += t.payload.amount; } }));
+  $("#acctCap").innerHTML = follow ? `<strong>${esc(name(follow))}</strong> appears in ${hits.length} of ${results.length} blocks (highlighted). Paid ${money(paid)}, received ${money(received)} in public payments.` : "";
+  renderTxs();
+};
+
+// loading
+async function readFile(f) { try { await open(JSON.parse(await f.text()), f.name); } catch (e) { $("#verdict").textContent = "Not a ledger export"; $("#verdict").className = "verdict bad"; $("#cap").textContent = "The file is not JSON written by jurisledger demo, export or snapshot."; } }
+const drop = $("#drop"), file = $("#file");
+drop.onclick = () => file.click(); drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); file.click(); } };
+file.onchange = () => file.files[0] && readFile(file.files[0]);
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); }; drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && readFile(e.dataTransfer.files[0]); };
+function withSample(fn) {
+  if (window.JURIS_CHAIN) return fn();
+  $("#verdict").textContent = "Loading the demo republic…";
+  const s = document.createElement("script"); s.src = "sample-chain.js"; s.onload = fn;
+  s.onerror = () => { $("#verdict").textContent = "Could not load the demo"; $("#cap").innerHTML = "Run <code>jurisledger demo --out demo</code> and drop <code>demo/chain.json</code> here instead."; };
+  document.head.appendChild(s);
+}
+$("#sample").onclick = () => withSample(() => { pristine = JSON.stringify(window.JURIS_CHAIN); $("#tamperBtn").disabled = false; open(JSON.parse(pristine), "the demo republic"); });
+$("#tamperBtn").onclick = () => {
+  if (!pristine) return;
+  const c = JSON.parse(pristine), mid = Math.floor(c.blocks.length / 3);
+  const b = c.blocks.slice(mid).concat(c.blocks.slice(0, mid)).find(x => x.txs.some(t => t.kind === "PAYMENT"));
+  if (!b) return;
+  b.txs.find(x => x.kind === "PAYMENT").payload.amount += 100000;
+  open(c, `the demo republic with one payment in block ${b.header.height} raised by 1,000.00`);
+};
+})();
+</script>
+</body>
+</html>
