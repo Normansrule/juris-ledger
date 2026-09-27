@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.14.0 — arbitration, visualized
+- Explainer step 8, "Settle a dispute": a lease with three instalments on a block timeline. Advance time, pay or miss, open a dispute (the obligation turns *disputed*, not *overdue*), and issue an award with sliders that physically cannot exceed the original debt or bring a due date forward. Two cheat buttons show the validators' refusals. Evidence verification moves to step 9.
+
 ## 0.13.0 — the explorer
 - `site/explorer.html`: drop a `chain.json` (or open the bundled demo republic) and every block is checked in the browser as it animates into a strip — links, heights, timestamps, Merkle roots, every transaction signature and every commit certificate; snapshot-based exports are understood. Then browse blocks, read transactions as plain sentences, filter them, follow one account across the chain, and see GDP by expenditure up to any block. "Alter one old payment" shows exactly which block breaks and why.
 - `verify.js` gained `auditChain`, `merkleRoot`, `accountsOf` and `expenditure`; tests require the structural audit to reject exactly what `Chain.load` rejects on four kinds of tampering and GDP to match `stats.gdp` to the cent.

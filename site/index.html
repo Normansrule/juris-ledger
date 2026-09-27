@@ -13,7 +13,7 @@
   <nav class="folios" aria-label="Steps">
     <a href="explorer.html"><strong>Explore a ledger</strong></a>
     <a href="#final">1 A payment becomes final</a><a href="#attack">2 The network is attacked</a><a href="#contract">3 A contract is sealed</a>
-    <a href="#identity">4 Who is anyone</a><a href="#hidden">5 Hidden amounts</a><a href="#gdp">6 The economy, measured</a><a href="#fraud">7 Fraud, found</a><a href="#evidence">8 Prove it</a>
+    <a href="#identity">4 Who is anyone</a><a href="#hidden">5 Hidden amounts</a><a href="#gdp">6 The economy, measured</a><a href="#fraud">7 Fraud, found</a><a href="#dispute">8 Settle a dispute</a><a href="#evidence">9 Prove it</a>
   </nav>
 </div></header>
 
@@ -168,8 +168,40 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
 </section>
 
 <!-- 8 ------------------------------------------------------------------ -->
+<section class="folio" id="dispute">
+  <div class="head"><div class="num">8</div><div><h2>Settle a dispute</h2>
+  <p>A lease names three rent instalments and an arbitrator both parties chose. Move time forward, pay or don't, open a dispute, and decide it. The arbitrator's powers are a short list: reduce, postpone or waive what is in dispute. Try to make it do more.</p></div></div>
+  <div class="stage" style="grid-template-columns:1fr">
+    <div>
+      <svg id="dispSvg" viewBox="0 0 900 250" aria-hidden="true" style="font:12px var(--sans)"></svg>
+      <div class="controls">
+        <button class="btn" id="dNext">Next block</button>
+        <button class="btn" id="dPay">Bakery pays the next instalment</button>
+        <button class="btn" id="dOpen" disabled>Mill opens a dispute</button>
+        <button class="btn ghost" id="dReset">Start over</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.2rem" class="disp-grid">
+      <div>
+        <h3>The obligations, as the ledger reports them</h3>
+        <div id="dTable"></div>
+        <div class="caption" id="dCap"></div>
+      </div>
+      <div id="dAward" style="opacity:.45;pointer-events:none">
+        <h3>The arbitrator's award <span class="status" id="dAwardState">no open dispute</span></h3>
+        <label>Amount owed for <span id="dAwardOb">—</span>: <strong id="dAmtLabel">—</strong><input type="range" id="dAmt" min="1" max="500" value="500"></label>
+        <label>Due at block: <strong id="dDueLabel">—</strong><input type="range" id="dDue" min="1" max="30" value="6"></label>
+        <label style="display:flex;gap:.5rem;align-items:center;margin:.4rem 0"><input type="checkbox" id="dWaive"> Waive it entirely</label>
+        <div class="controls"><button class="btn" id="dDecide">Issue the award</button><button class="btn ghost" id="dCheat">Try to double the debt</button><button class="btn ghost" id="dCheat2">Try to award rent not in dispute</button></div>
+      </div>
+    </div>
+    <p style="font-size:.9rem;margin:0">In the repository: <code>jurisledger disputes</code> runs this with real signed transactions — thirteen claims, including that the award moved no money and that the claim, defence and award all appear in the offline-verifiable evidence file.</p>
+  </div>
+</section>
+
+<!-- 9 ------------------------------------------------------------------ -->
 <section class="folio" id="evidence">
-  <div class="head"><div class="num">8</div><div><h2>Prove it to a court</h2>
+  <div class="head"><div class="num">9</div><div><h2>Prove it to a court</h2>
   <p>An arbitrator receives one file about one contract. They check it here, in this browser: every signature, every validator certificate, every link to its block. The file never leaves their machine, and they do not have to trust whoever sent it — only the validators' public keys.</p></div></div>
   <div class="stage">
     <div>
@@ -205,7 +237,7 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
   <p>Each claim on this page is a boolean in the test suite. Tested on Ubuntu with Python 3.10 or newer; the only dependency is the <code>cryptography</code> package.</p></div></div>
   <div class="commands">
 <span># get it</span><br>git clone https://github.com/Normansrule/juris-ledger.git &amp;&amp; cd juris-ledger<br>python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install -e ".[dev]"<br><br>
-<span># the steps above, as experiments with checked claims</span><br>jurisledger integration &nbsp;&nbsp;<span># 1</span><br>jurisledger asynchrony &nbsp;&nbsp;&nbsp;<span># 2</span><br>jurisledger contracts &nbsp;&nbsp;&nbsp;&nbsp;<span># 3</span><br>jurisledger identity &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 4</span><br>jurisledger confidential &nbsp;<span># 5</span><br>jurisledger gdp &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 6</span><br>jurisledger fraud &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 7</span><br>jurisledger demo --out demo &amp;&amp; jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json &nbsp;<span># 8</span><br><br>
+<span># the steps above, as experiments with checked claims</span><br>jurisledger integration &nbsp;&nbsp;<span># 1</span><br>jurisledger asynchrony &nbsp;&nbsp;&nbsp;<span># 2</span><br>jurisledger contracts &nbsp;&nbsp;&nbsp;&nbsp;<span># 3</span><br>jurisledger identity &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 4</span><br>jurisledger confidential &nbsp;<span># 5</span><br>jurisledger gdp &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 6</span><br>jurisledger fraud &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 7</span><br>jurisledger disputes &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 8</span><br>jurisledger demo --out demo &amp;&amp; jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json &nbsp;<span># 9</span><br><br>
 <span># then the real thing: four validator processes, one killed and revived</span><br>jurisledger cluster --out cluster
   </div>
 </section>
@@ -415,7 +447,81 @@ const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++)
   draw();
 })();
 
-/* ---------- 8: evidence verification in the browser ---------- */
+/* ---------- 8: disputes and arbitration ---------- */
+(function disputes() {
+  const svg = $("#dispSvg"), X0 = 40, X1 = 870, MAXB = 20, bx = b => X0 + (X1 - X0) * (b / MAXB);
+  const ORIG = [{ id: "rent-1", amount: 500, due: 4 }, { id: "rent-2", amount: 500, due: 8 }, { id: "rent-3", amount: 500, due: 12 }];
+  let now, obs, events, dispute, decided;
+  const status = o => {
+    if (o.paidAt !== null) return o.paidAt <= o.due ? "PAID" : "PAID_LATE";
+    if (o.waived) return "WAIVED";
+    if (dispute && !decided && dispute.id === o.id) return "DISPUTED";
+    return now > o.due ? "OVERDUE" : "PENDING";
+  };
+  const chip = st => { const cls = { PAID: "good", WAIVED: "good", PAID_LATE: "warn", DISPUTED: "warn", OVERDUE: "bad", PENDING: "" }[st];
+    return `<span class="status ${cls}">${st.replace("_", " ").toLowerCase()}</span>`; };
+  function reset() {
+    now = 1; obs = ORIG.map(o => ({ ...o, orig: o.amount, origDue: o.due, paidAt: null, waived: false, adjusted: false }));
+    events = [{ b: 1, t: "lease signed", c: "var(--ink)" }]; dispute = null; decided = false;
+    $("#dCap").innerHTML = "Block 1: the lease is signed by both parties and names Auditor & Co. as arbitrator. Press <strong>Next block</strong> to let time pass.";
+    render();
+  }
+  function log(t, c) { events.push({ b: now, t, c }); }
+  function render() {
+    svg.innerHTML = "";
+    el("line", { x1: X0, y1: 120, x2: X1, y2: 120, stroke: "var(--rule)", "stroke-width": 2 }, svg);
+    for (let b = 1; b <= MAXB; b++) { el("line", { x1: bx(b), y1: 115, x2: bx(b), y2: 125, stroke: "var(--rule)" }, svg);
+      if (b % 2 === 0) el("text", { x: bx(b), y: 142, "text-anchor": "middle", fill: "var(--ink-2)" }, svg).textContent = b; }
+    el("rect", { x: X0, y: 116, width: Math.max(0, bx(now) - X0), height: 8, fill: "var(--ink)", rx: 3 }, svg);
+    el("circle", { cx: bx(now), cy: 120, r: 7, fill: "var(--ink)" }, svg);
+    obs.forEach((o, i) => { const st = status(o), col = { PAID: "var(--verified)", WAIVED: "var(--verified)", PAID_LATE: "var(--amber)", DISPUTED: "var(--amber)", OVERDUE: "var(--seal)", PENDING: "var(--ink-2)" }[st];
+      const y = 30 + i * 26;
+      if (o.adjusted && o.origDue !== o.due) el("line", { x1: bx(o.origDue), y1: y, x2: bx(o.due), y2: y, stroke: col, "stroke-dasharray": "3 4" }, svg);
+      el("path", { d: `M${bx(o.due)} ${y + 8} l-6 -10 h12 z`, fill: col }, svg);
+      el("text", { x: bx(o.due) + 10, y: y + 2, fill: col }, svg).textContent = `${o.id} due · ${st.replace("_", " ").toLowerCase()}`; });
+    const lanes = [];                                   // place each label in the first lane where it fits
+    events.forEach(e => { const x = bx(e.b) + 4, w = e.t.length * 6.3 + 10;
+      let lane = lanes.findIndex(end => x > end); if (lane < 0) { lane = lanes.length; lanes.push(0); } lanes[lane] = x + w;
+      const y = 166 + lane * 19;
+      el("line", { x1: bx(e.b), y1: 128, x2: bx(e.b), y2: y - 10, stroke: e.c, opacity: .5 }, svg);
+      el("text", { x, y, fill: e.c, "font-size": 11 }, svg).textContent = e.t; });
+    $("#dTable").innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.92rem">${obs.map(o => `<tr style="border-bottom:1px solid var(--rule)">
+      <td style="padding:.35rem 0">${o.id}</td><td>${o.adjusted && o.amount !== o.orig ? `<s style="color:var(--ink-2)">${o.orig}.00</s> ` : ""}${o.waived ? "0.00" : o.amount + ".00"}</td>
+      <td>due ${o.adjusted && o.due !== o.origDue ? `<s style="color:var(--ink-2)">${o.origDue}</s> ` : ""}${o.due}</td><td>${chip(status(o))}</td></tr>`).join("")}</table>`;
+    const overdue = obs.find(o => status(o) === "OVERDUE");
+    $("#dOpen").disabled = !overdue || !!(dispute && !decided);
+    $("#dPay").disabled = !obs.some(o => o.paidAt === null && !o.waived && status(o) !== "DISPUTED");
+    const panel = $("#dAward"), open = dispute && !decided;
+    panel.style.opacity = open ? 1 : .45; panel.style.pointerEvents = open ? "auto" : "none";
+    $("#dAwardState").textContent = open ? "dispute open" : decided ? "decided — cannot be changed" : "no open dispute";
+    $("#dAwardState").className = "status " + (open ? "warn" : decided ? "good" : "");
+    if (open) { const o = obs.find(x => x.id === dispute.id); $("#dAwardOb").textContent = o.id; }
+  }
+  $("#dNext").onclick = () => { if (now >= MAXB) return; now++; const late = obs.filter(o => o.due === now - 1 && status(o) === "OVERDUE");
+    $("#dCap").innerHTML = `Block ${now}.` + (late.length ? ` <strong class="bad">${late.map(o => o.id).join(", ")} is now overdue.</strong> Nobody has to take anyone's word for it: the payment heights are on the ledger.` : " Nothing new."); render(); };
+  $("#dPay").onclick = () => { const o = obs.find(x => x.paidAt === null && !x.waived && status(x) !== "DISPUTED"); if (!o) return;
+    o.paidAt = now; log(`paid ${o.id}`, "var(--verified)"); $("#dCap").innerHTML = `The Bakery signs a payment of ${o.amount}.00 naming <code>${o.id}</code>. ` + (now <= o.due ? "On time: <strong class=\"good\">paid</strong>." : `After block ${o.due}: <strong class="warn">paid late</strong> — settled, and the lateness is permanent history.`); render(); };
+  $("#dOpen").onclick = () => { const o = obs.find(x => status(x) === "OVERDUE"); dispute = { id: o.id, at: now }; decided = false;
+    log(`dispute on ${o.id}`, "var(--amber)"); log("defence filed", "var(--amber)");
+    $("#dAmt").max = o.amount; $("#dAmt").value = o.amount; $("#dDue").min = o.due; $("#dDue").max = o.due + 12; $("#dDue").value = Math.max(o.due, now + 3); $("#dWaive").checked = false;
+    $("#dAmtLabel").textContent = o.amount + ".00"; $("#dDueLabel").textContent = $("#dDue").value;
+    $("#dCap").innerHTML = `The Mill opens a dispute naming <code>${o.id}</code>; the Bakery files a defence (the grinder was broken). While it is open the ledger reports the obligation as <strong class="warn">disputed</strong>, not overdue — whether it is owed is exactly what is being decided.`; render(); };
+  $("#dAmt").oninput = e => $("#dAmtLabel").textContent = e.target.value + ".00";
+  $("#dDue").oninput = e => $("#dDueLabel").textContent = e.target.value;
+  $("#dDecide").onclick = () => { const o = obs.find(x => x.id === dispute.id); o.adjusted = true;
+    if ($("#dWaive").checked) { o.waived = true; log(`${o.id} waived`, "var(--verified)"); }
+    else { o.amount = +$("#dAmt").value; o.due = +$("#dDue").value; log(`award: ${o.amount}.00 by ${o.due}`, "var(--verified)"); }
+    decided = true;
+    $("#dCap").innerHTML = `The arbitrator's signed award is final for this dispute. <strong>No money moved</strong>: it changed what the record says is owed. ` + (o.waived ? "Nothing more is owed." : `The Bakery now owes ${o.amount}.00 by block ${o.due}; if it doesn't pay, the record will say overdue again and the evidence file goes to a court.`); render(); };
+  $("#dCheat").onclick = () => { const o = obs.find(x => x.id === dispute.id);
+    $("#dCap").innerHTML = `<strong class="bad">Refused by every validator:</strong> “an award cannot increase what is owed.” An award of ${o.amount * 2}.00 on a ${o.amount}.00 obligation never becomes a block. (That limit is a safety choice in this prototype; real tribunals award damages, which would need a cap the parties agree in advance.)`; };
+  $("#dCheat2").onclick = () => { const other = obs.find(x => x.id !== dispute.id && x.paidAt === null) || obs.find(x => x.id !== dispute.id);
+    $("#dCap").innerHTML = `<strong class="bad">Refused:</strong> “an award may only adjust obligations that are in dispute.” <code>${other.id}</code> was never claimed, so the arbitrator has no power over it.`; };
+  $("#dReset").onclick = reset;
+  reset();
+})();
+
+/* ---------- 9: evidence verification in the browser ---------- */
 (async function evidence() {
   const V = window.JurisVerify;
   const btnV = $("#evVerify"), tamper = [...document.querySelectorAll("#tamper button")];

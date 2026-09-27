@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/banner.svg" alt="JurisLedger" width="100%"></p>
 
 <p align="center">
-  <a href="https://normansrule.github.io/juris-ledger/"><b>▶ Open the interactive explainer</b></a> — eight animated, step-by-step simulations you can drive yourself
+  <a href="https://normansrule.github.io/juris-ledger/"><b>▶ Open the interactive explainer</b></a> — nine animated, step-by-step simulations you can drive yourself
   &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/explorer.html"><b>Explore a whole ledger</b></a>
   &nbsp;·&nbsp; <a href="#quick-start">Quick start</a> &nbsp;·&nbsp; <a href="#who-can-attack-it-and-how-far-they-get">Threats</a> &nbsp;·&nbsp; <a href="docs/GOVERNMENT.md">Public-sector blueprint</a>
 </p>
@@ -14,7 +14,7 @@ JurisLedger is a research framework with working code. It asks one question and 
 
 > *If contracts and payments were recorded on a ledger that no single institution controls, could agreements become harder to forge and easier to prove, could fraud become harder to hide, and could a country measure its own economy more truthfully — without handing anyone a new kind of central power?*
 
-## Eight things you can watch happen
+## Nine things you can watch happen
 
 The [explainer site](https://normansrule.github.io/juris-ledger/) (one self-contained page, also in [`site/index.html`](site/index.html)) walks the life of a single transaction. Each step is interactive and maps to one experiment in this repository:
 
@@ -27,7 +27,8 @@ The [explainer site](https://normansrule.github.io/juris-ledger/) (one self-cont
 | 5. Hidden amounts, honest books | Decompose an amount into 32 bit-commitments; try to pay a negative number | `jurisledger confidential` |
 | 6. The economy, measured | Move purchases into cash and see exactly what the ledger stops seeing | `jurisledger gdp` |
 | 7. Fraud, found | Inject a round-tripping ring and run the detector | `jurisledger fraud` |
-| 8. Prove it to a court | Drop a real evidence file and verify every signature, certificate and Merkle path in the browser; then try four ways to cheat | `jurisledger verify`, `tests/test_site_verifier.py` |
+| 8. Settle a dispute | Move time forward, pay or miss rent, open a dispute, issue an award — and try to make the arbitrator double the debt or touch rent nobody disputed | `jurisledger disputes` |
+| 9. Prove it to a court | Drop a real evidence file and verify every signature, certificate and Merkle path in the browser; then try four ways to cheat | `jurisledger verify`, `tests/test_site_verifier.py` |
 
 Everything claimed in this README is backed by an experiment you can run in about half a minute:
 

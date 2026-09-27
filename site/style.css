@@ -92,3 +92,5 @@ footer{padding:3rem 0 5rem;color:var(--ink-2);font-size:.95rem}
 .node text{font:12px var(--sans);fill:var(--ink);text-anchor:middle}
 .dot{fill:var(--ink)}
 .dot.pre{fill:var(--amber)}.dot.com{fill:var(--verified)}
+
+@media (max-width:860px){.disp-grid{grid-template-columns:1fr!important}}
