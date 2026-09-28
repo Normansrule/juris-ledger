@@ -59,7 +59,7 @@ PAYMENT_RULES = {
 }
 TAX_TYPES = {"production", "income"}
 
-POLICY_KEYS = {"min_attestations", "unverified_payment_limit", "recovery_delay"}
+POLICY_KEYS = {"min_attestations", "unverified_payment_limit", "recovery_delay", "max_tx_per_block"}
 DRAFT, ACTIVE, SUPERSEDED = "DRAFT", "ACTIVE", "SUPERSEDED"
 RELATIONS = {"cites", "amends", "supersedes", "implements"}
 VISIBILITIES = {"public", "restricted"}
@@ -99,6 +99,7 @@ class State:
         self.issuers: List[str] = []                       # accredited identity issuers
         self.policy: Dict[str, int] = {}                   # empty = open network (no identity rules)
         self.recoveries: Dict[str, Dict[str, Any]] = {}    # subject -> pending lost-key recovery
+        self._quota_height, self._quota_counts = -1, {}    # transient, per block: not part of the state root
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -165,9 +166,20 @@ class State:
         _need(tx.kind in T.KINDS, f"unknown transaction kind {tx.kind}")
         _need(isinstance(tx.nonce, int) and tx.nonce >= 0, "bad nonce")
         _need(tx.signature_valid(), "invalid signature")
+        cap = self.policy.get("max_tx_per_block", 0)
+        if cap:
+            # Spam control without fees: an account may put at most `cap` transactions in one
+            # block.  Institutions (government, validators, issuers) are exempt.
+            if height != self._quota_height:
+                self._quota_height, self._quota_counts = height, {}
+            role = self.accounts.get(tx.sender, {}).get("role")
+            if role not in INSTITUTIONAL:
+                used = self._quota_counts.get(tx.sender, 0)
+                _need(used < cap, f"account quota reached: at most {cap} transactions per block")
 
         if tx.kind == T.REGISTER:
             self._register(tx)
+            self._count_quota(tx.sender)
             return
 
         acct = self.accounts.get(tx.sender)
@@ -199,8 +211,13 @@ class State:
         }[tx.kind]
         handler(tx, height)               # validates fully before mutating
         acct["nonce"] += 1
+        self._count_quota(tx.sender)
 
     # -- accounts ------------------------------------------------------- #
+    def _count_quota(self, sender: str) -> None:
+        if self.policy.get("max_tx_per_block", 0):
+            self._quota_counts[sender] = self._quota_counts.get(sender, 0) + 1
+
     def _register(self, tx: T.Transaction) -> None:
         p = tx.payload
         _need(tx.sender not in self.accounts, "account already registered")

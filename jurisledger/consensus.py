@@ -178,6 +178,7 @@ class Node:
         # Mempool policy: keep only what is valid against the new tip.  (A censored
         # transaction is still valid, so it survives until an honest proposer takes it.)
         trial, alive, progress = self.chain.state.copy(), set(), True
+        trial.policy = {k: v for k, v in trial.policy.items() if k != "max_tx_per_block"}   # quota delays, never drops
         while progress:
             progress = False
             for txid, t in self.mempool.items():

@@ -44,6 +44,16 @@
 .gdprow .bar{margin:0}
 .gdprow .n{text-align:right;font-variant-numeric:tabular-nums}
 select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--ink);width:100%}
+.flags{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:.8rem;margin-top:.6rem}
+.flag{background:var(--sheet);border:1px solid var(--rule);border-left:4px solid var(--seal);border-radius:10px;padding:.8rem;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.flag:focus-visible,.flag.on{outline:none;box-shadow:0 0 0 2px var(--seal)}
+.flag h3{margin:0 0 .3rem;font-size:1.05rem}
+.flag svg{width:100%;height:auto;display:block;margin:.3rem 0}
+.flag p{font-size:.88rem;margin:.2rem 0;color:var(--ink-2)}
+.tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem}
+.tabs button{font:inherit;font-size:.9rem;padding:.4rem .9rem;border-radius:999px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+#c3d{width:100%;height:480px;display:block;border-radius:10px;background:radial-gradient(ellipse at 50% 40%,var(--sheet),var(--paper));touch-action:none}
 .note{font-size:.88rem;color:var(--ink-2);margin-top:1rem}
 .empty{color:var(--ink-2);padding:2rem 0}
 </style>
@@ -81,6 +91,16 @@ select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8p
   </div>
   <div class="strip" id="strip" role="listbox" aria-label="Blocks"></div>
 
+  <section class="panel" id="view3d" hidden style="margin-top:1rem">
+    <div class="tabs" role="tablist" aria-label="3D view">
+      <button data-m="chain" aria-pressed="true">The chain in 3D</button>
+      <button data-m="flows" aria-pressed="false">Money flows</button>
+      <span style="margin-left:auto;font-size:.85rem;color:var(--ink-2);align-self:center">drag to turn · scroll to zoom · click a block</span>
+    </div>
+    <canvas id="c3d" aria-label="Three-dimensional view of the ledger" role="img"></canvas>
+    <p class="caption" id="cap3d" style="min-height:0;margin-top:.6rem">Each box is a block, sized by its transactions and linked to the one before. The four spheres are the validators; select a block and the amber lines show which of them signed it.</p>
+  </section>
+
   <div class="split" id="split" hidden>
     <div class="panel">
       <h2 id="bTitle" style="font-size:1.6rem">Block</h2>
@@ -102,11 +122,18 @@ select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8p
     </div>
   </div>
 
+  <section class="panel" id="flagsPanel" hidden style="margin-top:1.2rem">
+    <h2 style="font-size:1.6rem">Review flags</h2>
+    <p style="color:var(--ink-2);max-width:70ch">The four detectors of <code>jurisledger fraud</code>, run here on the ledger you opened: money moving in a circle, payments just under a reporting threshold, amounts whose first digits look invented, and one invoice financed by several lenders. A flag is a lead for a person, not a finding — ordinary trade triggers some. Click one to light up its blocks.</p>
+    <div class="flags" id="flags"></div>
+  </section>
+
   <p class="note">This page checks the ledger's structure and every signature against the validators named in its founding record. It does not re-run balances, nonces and contract rules; for the complete check run <code>jurisledger audit chain.json</code>. A ledger whose validator set changed by governance vote may show certificate warnings here that the full audit accepts.</p>
 </main>
 <footer><div class="wrap">JurisLedger is a research prototype under the MIT licence. Nothing here is legal advice.</div></footer>
 
 <script src="verify.js"></script>
+<script src="ledger3d.js"></script>
 <script>
 (async () => {
 const $ = s => document.querySelector(s), V = window.JurisVerify;
@@ -114,7 +141,7 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const money = c => (c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const COLORS = { hh: "#127C6E", firm: "#0F1F3D", gov: "#B4720C", wage: "#6B7FA8", legal: "#B8302F", other: "#9AA7B8" };
-let chain = null, pristine = null, acc = {}, results = [], selected = -1, follow = "";
+let chain = null, pristine = null, acc = {}, results = [], selected = -1, follow = "", view3d = null;
 
 if (!V || !(await V.supported())) { $("#verdict").textContent = "This browser cannot check Ed25519 signatures"; $("#cap").innerHTML = "Use a current Chrome, Edge, Firefox or Safari, or run <code>jurisledger audit</code>."; $("#sample").disabled = true; return; }
 
@@ -143,9 +170,59 @@ function sentence(t) {
   }
 }
 
+function ringSvg(f) {
+  const n = f.accounts.length, R = 56, cx = 110, cy = 96, bend = n === 2 ? 24 : 10;
+  const pts = f.accounts.map((_, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n; return [cx + R * Math.cos(a), cy + R * Math.sin(a)]; });
+  let out = `<svg viewBox="0 0 220 190" aria-hidden="true"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--seal)"/></marker></defs>`;
+  pts.forEach((p, i) => {
+    const q = pts[(i + 1) % n], dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
+    const nx = uy, ny = -ux;                                  // bend each edge to its own side, so A→B and B→A never overlap
+    const mx = (p[0] + q[0]) / 2 + nx * bend, my = (p[1] + q[1]) / 2 + ny * bend;
+    out += `<path d="M${p[0] + ux * 14} ${p[1] + uy * 14} Q${mx} ${my} ${q[0] - ux * 16} ${q[1] - uy * 16}" fill="none" stroke="var(--seal)" stroke-width="1.8" marker-end="url(#ah)"/>`;
+    const side = ny > 0.7 ? -(bend + 12) : 11;               // outside the curve, unless that is down among the names
+    out += `<text x="${mx + nx * side}" y="${my + ny * side + 3}" text-anchor="middle" font-size="9" fill="var(--seal)">${Math.round(f.amounts[i] / 100).toLocaleString()}</text>`;
+  });
+  pts.forEach((p, i) => { out += `<circle cx="${p[0]}" cy="${p[1]}" r="12" fill="var(--sheet)" stroke="var(--ink)" stroke-width="1.4"/><text x="${p[0]}" y="${p[1] + (p[1] > cy ? 26 : -18)}" text-anchor="middle" font-size="9.5" fill="var(--ink)">${esc(name(f.accounts[i]).slice(0, 22))}</text>`; });
+  return out + "</svg>";
+}
+function flagBlocks(f) {
+  const hit = new Set();
+  results.forEach(r => r.block.txs.forEach(t => {
+    const h = r.block.header.height, p = t.payload || {};
+    if (f.detector === "circular_flow" && f.signatures.includes(t.signature)) hit.add(r.index);
+    if (f.detector === "structuring" && t.sender === f.account && h >= f.blocks[0] && h <= f.blocks[1] && t.kind === "PAYMENT") hit.add(r.index);
+    if (f.detector === "benford" && t.sender === f.account && t.kind === "PAYMENT") hit.add(r.index);
+    if (f.detector === "duplicate_invoice_financing" && p.invoice === f.invoice) hit.add(r.index);
+  }));
+  return hit;
+}
+function renderFlags() {
+  const flags = V.reviewFlags(chain), box = $("#flags");
+  $("#flagsPanel").hidden = false;
+  if (!flags.length) { box.innerHTML = '<p class="empty">No flags on this ledger.</p>'; return; }
+  box.innerHTML = flags.map((f, i) => {
+    let body = "";
+    if (f.detector === "circular_flow") body = `<h3>Money in a circle</h3>${ringSvg(f)}<p>${f.hops} firms, ${money(f.total)} in total, ${f.blocks[0] === f.blocks[1] ? "block " + f.blocks[0] : "blocks " + f.blocks[0] + "–" + f.blocks[1]}. Each payment within 10% of the first.</p>`;
+    else if (f.detector === "structuring") body = `<h3>Just under the threshold</h3><p><strong>${esc(name(f.account))}</strong> made ${f.count} payments between 9,000.00 and 10,000.00 in blocks ${f.blocks[0]}–${f.blocks[1]}, totalling ${money(f.total)}.</p>`;
+    else if (f.detector === "benford") body = `<h3>Invented-looking amounts</h3><p>The first digits of <strong>${esc(name(f.account))}</strong>'s ${f.payments} payments fit Benford's law badly (chi-square ${f.chi2}, critical ${f.critical}).</p>`;
+    else body = `<h3>One invoice, several lenders</h3><p><strong>${esc(name(f.borrower))}</strong> took financing against the same invoice from ${f.lenders.map(l => esc(name(l))).join(" and ")}.</p>`;
+    return `<button class="flag" data-f="${i}">${body}</button>`;
+  }).join("");
+  box.querySelectorAll(".flag").forEach(btn => btn.onclick = () => {
+    const on = !btn.classList.contains("on");
+    box.querySelectorAll(".flag").forEach(b => b.classList.remove("on"));
+    const hit = on ? flagBlocks(flags[+btn.dataset.f]) : new Set();
+    if (on) btn.classList.add("on");
+    document.querySelectorAll(".card").forEach(c => c.classList.toggle("hit", hit.has(+c.dataset.i)));
+    if (view3d) { const f = flags[+btn.dataset.f]; hit.ring = on && f.detector === "circular_flow" ? f.accounts : null; view3d.highlight(on ? hit : null); }
+    if (hit.size) { const first = Math.min(...hit); select(first); document.querySelector(`.card[data-i="${first}"]`).scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest", inline: "center" }); }
+  });
+}
+
 function reset() {
   $("#strip").innerHTML = ""; $("#problems").innerHTML = ""; $("#prog").style.width = "0";
-  $("#split").hidden = true; $("#legend").hidden = true; results = []; selected = -1;
+  $("#split").hidden = true; $("#legend").hidden = true; $("#flagsPanel").hidden = true; $("#view3d").hidden = true; results = []; selected = -1;
+  if (view3d) { view3d.destroy(); view3d = null; }
 }
 async function open(exported, label) {
   chain = exported; reset();
@@ -174,7 +251,14 @@ async function open(exported, label) {
     $("#cap").textContent = "This ledger has been altered or was never finalised. What failed:";
     $("#problems").innerHTML = report.problems.slice(0, 12).map(p => `<li>${esc(p)}</li>`).join("") + (report.problems.length > 12 ? `<li>…and ${report.problems.length - 12} more</li>` : "");
   }
-  $("#split").hidden = false; select(results.length - 1);
+  $("#split").hidden = false;
+  if (window.Ledger3D) {
+    $("#view3d").hidden = false;
+    view3d = Ledger3D.mount($("#c3d"), { results, chain, acc, onSelect: i => select(i) });
+    view3d.setMode(document.querySelector('#view3d .tabs button[aria-pressed="true"]').dataset.m);
+  }
+  select(results.length - 1);
+  renderFlags();
 }
 
 function addCard(r) {
@@ -194,6 +278,7 @@ function addCard(r) {
 function select(i, focus) {
   if (i < 0 || !results[i]) return;
   selected = i; const r = results[i], b = r.block, h = b.header;
+  if (view3d) view3d.select(i);
   document.querySelectorAll(".card").forEach(c => c.classList.toggle("sel", +c.dataset.i === i));
   if (focus) document.querySelector(`.card[data-i="${i}"]`).focus();
   $("#bTitle").textContent = `Block ${h.height}`;
@@ -224,6 +309,13 @@ function renderGdp() {
     + `<div class="gdprow" style="border-top:1px solid var(--rule);padding-top:.5rem"><strong>GDP</strong><span></span><strong class="n">${money(g.gdp)}</strong></div><p style="font-size:.85rem;color:var(--ink-2);margin:.2rem 0 0">C + I + G + X − M, from ${g.payments} payments through block ${results[selected].block.header.height}.</p>`;
 }
 $("#txFilter").oninput = renderTxs;
+document.querySelectorAll("#view3d .tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#view3d .tabs button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  if (view3d) view3d.setMode(b.dataset.m);
+  $("#cap3d").textContent = b.dataset.m === "chain"
+    ? "Each box is a block, sized by its transactions and linked to the one before. The four spheres are the validators; select a block and the amber lines show which of them signed it."
+    : "Each sphere is an account, grouped by role (households, firms by sector, government, banks, the rest of the world) and sized by money moved. Each arc is money paid from one to another, thicker for more. Click a review flag below and its ring turns red.";
+});
 $("#acct").onchange = e => {
   follow = e.target.value; const hits = [];
   results.forEach(r => { const on = !!follow && r.block.txs.some(t => involves(t, follow)); document.querySelector(`.card[data-i="${r.index}"]`).classList.toggle("hit", on); if (on) hits.push(r.block.header.height); });

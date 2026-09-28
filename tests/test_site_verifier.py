@@ -106,3 +106,37 @@ def test_committed_site_sample_chain_audits():
     text = (ROOT / "site/sample-chain.js").read_text()
     body = text[text.index("=") + 1:].rstrip().rstrip(";")
     assert Chain.load(body).height == 12
+
+
+@needs_node
+def test_browser_fraud_flags_match_python_on_all_four_detectors(tmp_path):
+    from jurisledger import fraud
+    from jurisledger.crypto import sha256_hex
+    from jurisledger.sim import SimConfig, run_simulation
+    res = run_simulation(SimConfig(periods=3))
+    eco, net = res.economy, res.network
+    f = eco.firms
+    ring = [f[1], f[6], f[11]]
+    for i, a in enumerate(ring):
+        net.submit(a.pay(ring[(i + 1) % 3].address, 250_000_00 + i * 1_000_00, S.INTERMEDIATE))
+    for i in range(6):
+        net.submit(f[3].pay(eco.banks[0].address, 9_400_00 + i * 50_00, "FINANCIAL"))
+    for k in range(80):
+        net.submit(f[8].pay(f[9].address, eco.rng.randint(1_000_00, 9_999_00), S.INTERMEDIATE))
+    inv = sha256_hex(b"receivable #77")
+    for bank in eco.banks:
+        net.submit(bank.pay(f[14].address, 80_000_00, "FINANCIAL", invoice=inv))
+    net.run_until_empty()
+    chain_file = tmp_path / "chain.json"
+    chain_file.write_text(res.chain.export())
+    out = subprocess.run([NODE, str(ROOT / "tests/js/flags_cli.mjs"), str(chain_file), "1000000"],
+                         capture_output=True, text=True, check=True)
+    js = json.loads(out.stdout)
+    py = fraud.run_all(res.chain, 10_000_00)
+
+    def key(flag):
+        who = flag.get("accounts") or [flag.get("account") or flag.get("invoice")]
+        return (flag["detector"], tuple(sorted(who)), flag.get("total"), flag.get("count"))
+
+    assert sorted(map(key, js)) == sorted(map(key, py))
+    assert {f["detector"] for f in js} == {"circular_flow", "structuring", "benford", "duplicate_invoice_financing"}

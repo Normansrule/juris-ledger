@@ -12,9 +12,12 @@
                                           run one validator (a process per machine in a deployment)
   jurisledger init --out DIR --validators host:port,... [--issuers a,b] [--min-attestations 2]
                                           prepare a multi-machine deployment (genesis, peers, per-machine key folders)
-  jurisledger keygen [-o FILE]            make a validator or wallet key file
+  jurisledger keygen [-o FILE] [--encrypt] make a validator or wallet key file (--encrypt: passphrase-sealed)
   jurisledger wallet new|register|balance|pay ...   (see jurisledger wallet -h)
   jurisledger snapshot CHAIN.json [-o SNAP.json]  certified state snapshot: join or audit without replaying history
+  jurisledger index CHAIN.json|HOST:PORT [-o ledger.db]   audit, then add new blocks to a SQLite index
+  jurisledger query ledger.db gdp [FROM TO] | account NAME | top | contract ID
+  jurisledger metrics ledger.db [-o metrics.csv]         per-block time series for dashboards
   jurisledger status HOST:PORT            height, state digest and mempool of a running validator
   jurisledger export HOST:PORT [-o FILE]  download and re-audit a running validator's ledger
   jurisledger all | NAME                  run every experiment, or one of:
@@ -122,6 +125,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--to"); ap.add_argument("--amount"); ap.add_argument("--purpose")
     ap.add_argument("--name"); ap.add_argument("--role", default="household"); ap.add_argument("--sector", default="")
     ap.add_argument("--pin", help="validator address to pin the TLS certificate to")
+    ap.add_argument("--encrypt", action="store_true", help="seal new key files with a passphrase (scrypt + AES-256-GCM)")
     ap.add_argument("--validators"); ap.add_argument("--issuers", default="")
     ap.add_argument("--chain-id", default="jurisledger-net"); ap.add_argument("--min-attestations", type=int, default=2)
     ap.add_argument("--unverified-limit", default="100.00"); ap.add_argument("--recovery-delay", type=int, default=100)
@@ -166,7 +170,11 @@ def main(argv: list[str]) -> int:
         if not all([args.genesis, args.key, args.peers, args.store, args.index is not None]):
             print("node needs --genesis --key --peers --store --index"); return 2
         genesis = json.loads(Path(args.genesis).read_text())
-        key = KeyPair.from_secret_hex(json.loads(Path(args.key).read_text())["secret"])
+        from .keystore import KeystoreError, load as load_key
+        try:
+            key = load_key(args.key)
+        except KeystoreError as err:
+            print(err); return 2
         peers = [(h, int(p)) for h, p in (x.rsplit(":", 1) for x in json.loads(Path(args.peers).read_text()))]
         listen = tuple(args.listen.rsplit(":", 1)) if args.listen else ("0.0.0.0", peers[args.index][1])
         listen = (listen[0], int(listen[1]))
@@ -180,7 +188,7 @@ def main(argv: list[str]) -> int:
         from . import wallet as W
         sub = args.paths[0] if args.paths else ""
         if sub == "new":
-            return W.cmd_new(args.out or "wallet.json")
+            return W.cmd_new(args.out or "wallet.json", args.encrypt)
         if sub in ("register", "balance", "pay") and len(args.paths) == 2 and args.key:
             client, key = W.connect(args.paths[1], args.pin), W.load_key(args.key)
             try:
@@ -202,6 +210,58 @@ def main(argv: list[str]) -> int:
         Path(out).write_text(json.dumps({"genesis": chain.genesis, "snapshot": snap, "blocks": []}))
         print(f"wrote {out}: state after block {chain.height}, certified by {len(snap['votes'])} validator signatures.\n"
               f"Verify it with: jurisledger audit {out}   (checks the certificate and the state digest)")
+        return 0
+    if cmd == "index" and len(args.paths) == 1:
+        from .index import Index, IndexError_
+        src = args.paths[0]
+        try:
+            if not Path(src).exists() and ":" in src:
+                from .net import Client
+                host, port = src.rsplit(":", 1)
+                chain = Client(host, int(port), expect_address=args.pin).export()       # re-audited locally
+            else:
+                chain = Chain.load(Path(src).read_text())
+        except InvalidBlock as err:
+            print(f"REJECTED. Refusing to index a ledger that does not verify: {err}"); return 1
+        except OSError as err:
+            print(f"could not read {src}: {err}"); return 1
+        idx = Index(args.out or "ledger.db")
+        try:
+            r = idx.sync(chain)
+        except IndexError_ as err:
+            print(f"REFUSED. {err}"); return 1
+        print(f"indexed {r['blocks_added']} new blocks ({r['transactions_added']:,} transactions) into {idx.path} "
+              f"in {r['seconds']:.2f} s; index now at block {r['height']}")
+        return 0
+    if cmd == "query" and len(args.paths) >= 2:
+        from .index import Index
+        idx, what, rest = Index(args.paths[0]), args.paths[1], args.paths[2:]
+        money = lambda c: f"{c / 100:,.2f}"
+        if what == "gdp":
+            g = idx.gdp(*(int(x) for x in rest[:2])) if rest else idx.gdp()
+            print(f"blocks {g['from']}-{g['to']}:  GDP {money(g['gdp'])}  =  C {money(g['C'])} + I {money(g['I'])} + "
+                  f"G {money(g['G'])} + X {money(g['X'])} - M {money(g['M'])}")
+        elif what == "account" and rest:
+            a = idx.resolve(rest[0])
+            if not a:
+                print(f"no account named or addressed {rest[0]!r}"); return 1
+            for r in idx.account_history(a, 25):
+                print(f"  block {r['height']:>5}  {'paid    ' if r['direction'] == 'out' else 'received'} {money(r['amount']):>14}  "
+                      f"{'to' if r['direction'] == 'out' else 'from'} {r['counterparty'] or '?':<24} {r['purpose'].lower()}")
+        elif what == "top":
+            for r in idx.top_accounts(int(rest[0]) if rest else 10):
+                print(f"  {r['name']:<26} {r['role']:<10} paid {money(r['paid']):>16}   received {money(r['received']):>16}")
+        elif what == "contract" and rest:
+            for e in idx.contract_timeline(rest[0]):
+                print(f"  block {e['height']:>5}  {e['kind'].replace('_', ' ').lower():<18} {e['actor'] or '?':<24} {e['detail']}")
+        else:
+            print("query what? gdp [FROM TO] | account NAME | top [N] | contract ID"); return 2
+        return 0
+    if cmd == "metrics" and len(args.paths) == 1:
+        from .index import Index
+        out = args.out or "metrics.csv"
+        n = Index(args.paths[0]).write_metrics_csv(out)
+        print(f"wrote {n} rows (one per block) to {out}")
         return 0
     if cmd in ("status", "export") and len(args.paths) == 1:
         from .net import Client
@@ -227,8 +287,13 @@ def main(argv: list[str]) -> int:
             print("init needs --validators host:port,host:port,..."); return 2
         hosts = [h.strip() for h in args.validators.split(",") if h.strip()]
         issuers = [i.strip() for i in args.issuers.split(",") if i.strip()]
+        from .keystore import KeystoreError, passphrase_from_env_or_prompt
+        try:
+            pw = passphrase_from_env_or_prompt("passphrase for all new key files: ", confirm=True) if args.encrypt else None
+        except KeystoreError as err:
+            print(err); return 2
         made = init(args.out or "net", hosts, issuers, args.chain_id, args.min_attestations,
-                    parse_amount(args.unverified_limit), args.recovery_delay, parse_amount(args.treasury))
+                    parse_amount(args.unverified_limit), args.recovery_delay, parse_amount(args.treasury), pw)
         print(f"prepared a {len(hosts)}-validator network '{args.chain_id}' in {args.out or 'net'}/\n"
               f"  shared with everyone : genesis.json, peers.json\n"
               f"  one folder per machine: {made['validators']}  (each holds only its own key + start.sh)\n"
@@ -237,9 +302,15 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == "keygen":
         from .crypto import KeyPair
+        from .keystore import KeystoreError, passphrase_from_env_or_prompt, save
         k = KeyPair.generate()
-        Path(args.out or "key.json").write_text(json.dumps({"secret": k.secret_hex(), "address": k.address}))
-        print(f"wrote {args.out or 'key.json'}; public key {k.address}")
+        try:
+            pw = passphrase_from_env_or_prompt("new passphrase: ", confirm=True) if args.encrypt else None
+            save(k, args.out or "key.json", pw)
+        except KeystoreError as err:
+            print(err); return 2
+        print(f"wrote {args.out or 'key.json'} ({'encrypted with scrypt + AES-256-GCM' if pw else 'UNENCRYPTED: protect this file'}); "
+              f"public key {k.address}")
         return 0
     if cmd == "bench":
         from .bench import run

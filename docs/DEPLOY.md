@@ -10,6 +10,8 @@ jurisledger init --out net --chain-id my-republic \
   --issuers company-registry,tax-authority --min-attestations 2
 ```
 
+Add `--encrypt` to seal every key file with a passphrase (scrypt + AES-256-GCM). Validators then start with `JURISLEDGER_PASSPHRASE` set in their environment or type it at the prompt; a stolen key file alone is useless.
+
 You get:
 
 | File or folder | Who gets it | Contains |
@@ -49,6 +51,8 @@ Pin the validator you talk to with `--pin <its address from genesis.json>` when 
 |---|---|
 | A validator crashed | run `start.sh` again; it resumes from `store/` and asks peers for the blocks it missed |
 | A validator's disk is lost | copy a fresh `jurisledger snapshot` from a peer next to `genesis.json`, or let it replay from peers |
+| Limit spam | vote `SET_POLICY` `max_tx_per_block` (for example 50): no account can place more than that many transactions in one block |
+| Track the data | `jurisledger index HOST:PORT -o ledger.db` on a schedule, then `query` and `metrics`; see [`DATA.md`](DATA.md) |
 | Change the identity threshold or payment cap | each validator sends a `VALIDATOR_VOTE` with `SET_POLICY`; effective when more than two thirds agree |
 | Add or remove a validator or issuer | the same vote with `ADD` / `REMOVE` / `ADD_ISSUER` / `REMOVE_ISSUER` |
 | Publish the register | `jurisledger register chain.json -o register.html` and host the file anywhere; it is self-contained |

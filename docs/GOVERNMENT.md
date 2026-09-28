@@ -78,7 +78,7 @@ Each phase is useful if the next never happens.
 
 - **Law.** Recognition of ledger records and evidence files; rules on who may be an issuer; liability for a negligent attestation; how erasure rights apply to vaults. See `docs/LEGAL.md`.
 - **Governance charter.** How seats are allocated, rotated and funded; conflict-of-interest rules; what happens when the chain halts (by design it halts and does not guess when a third of validators are missing). The mechanics exist — validator votes change the validator set, the issuer set and the policy parameters — the charter says who may cast them.
-- **Key custody.** Hardware keys for validators and issuers; ceremonies; incident response. The protocol assumes keys are secret and says nothing about how.
+- **Key custody.** Key files can now be sealed with a passphrase (`--encrypt`), which protects against a copied disk or backup; a state deployment would still hold validator and issuer keys in hardware security modules, with signing ceremonies and incident response.
 - **Inclusion.** People without smartphones, legal guardianship, companies in liquidation, the deceased.
 
 ## 7. What is still missing in the software
@@ -86,7 +86,7 @@ Each phase is useful if the next never happens.
 1. Network operations: validators run over TLS with pinned keys, authenticated peers and a connection cap; still missing are per-source rate limiting, peer discovery, and a multi-site test with measured latency.
 2. Privacy: amounts can now be hidden with range proofs (`confidential`), but counterparties and purposes are public and proofs are large; a state would want Bulletproofs and encrypted notes before general payments.
 3. Finer time: block timestamps are validator-endorsed to within a five-minute tolerance; tighter guarantees need synchronised clocks.
-4. Fees or quotas against spam.
+4. Spam: a per-account block quota exists (`max_tx_per_block`, set by validator vote); coordinated flooding by many verified accounts still needs monitoring.
 5. Pruning of old blocks (certified snapshots now exist; archives of pre-snapshot history are the operator's job).
 6. Formal verification of the state machine, and an external security review.
 7. Accessibility and localisation of the register; a graphical wallet (a command-line one exists).

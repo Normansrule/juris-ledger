@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.17.0 — 3D views, sealed keys, spam quotas, a data index
+- **3D.** `site/ledger3d.js`, a dependency-free 3D renderer, adds two views to the explorer: *the chain* (every block a box on a rising spiral, sized by its transactions, linked to its parent, with the validators orbiting and amber vote lines showing who signed the selected block) and *money flows* (every account a sphere grouped by role, every trading pair an arc weighted by volume; a review flag lights its ring in red). Drag, zoom, click a block.
+- **Security.** Encrypted key files (`keystore.py`: scrypt + AES-256-GCM, address bound as associated data) for `keygen --encrypt`, `wallet new --encrypt` and `init --encrypt`; validators read `JURISLEDGER_PASSPHRASE` or prompt. Plain key files are created mode 600 and flagged if readable by others. A per-account, per-block transaction quota (`max_tx_per_block`) set by validator vote; excess transactions wait instead of being dropped; institutions exempt.
+- **Data tracking.** `index.py` and `jurisledger index | query | metrics`: an incremental SQLite index built only from audited blocks, refusing a different history, crash-safe per sync. About 35,000 transactions per second to build; GDP for any block range in about 0.1 ms. `docs/DATA.md`.
+- 153 tests.
+
+## 0.16.0 — fraud leads in the explorer
+- `verify.js` gained the four detectors of `fraud.py` (circular flows, structuring, Benford first digits, one invoice financed by several lenders) with identical thresholds; a test injects all four kinds of fraud and requires the browser and Python to flag exactly the same accounts, totals and counts.
+- The explorer shows a *Review flags* panel: each ring drawn as a diagram with curved edges and amounts, each other lead as a plain sentence; clicking a flag lights up its blocks and jumps to the first.
+- 144 tests.
+
 ## 0.15.0 — a self-verifying public register
 - `jurisledger register` and `jurisledger demo` now render the public register in the site's shared visual system (from a source checkout; otherwise the built-in styles).
 - Every contract in the register carries its own evidence file and a *Verify this contract in your browser* button backed by `site/verify.js`: signatures, certificates and Merkle paths are checked locally against the genesis validators embedded in the page. Embedded data is escaped so no string in it can close its script element.

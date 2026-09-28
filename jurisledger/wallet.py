@@ -34,10 +34,11 @@ def parse_amount(text: str) -> int:
 
 
 def load_key(path: str) -> KeyPair:
+    from .keystore import KeystoreError, load
     try:
-        return KeyPair.from_secret_hex(json.loads(Path(path).read_text())["secret"])
-    except (OSError, KeyError, ValueError) as err:
-        raise SystemExit(f"could not read the key file {path}: {err}. Make one with: jurisledger wallet new -o {path}")
+        return load(path)
+    except KeystoreError as err:
+        raise SystemExit(f"{err}. Make a key with: jurisledger wallet new -o {path}")
 
 
 def connect(target: str, pin: Optional[str]) -> Client:
@@ -45,15 +46,15 @@ def connect(target: str, pin: Optional[str]) -> Client:
     return Client(host, int(port), expect_address=pin)
 
 
-def cmd_new(out: str) -> int:
+def cmd_new(out: str, encrypt: bool = False) -> int:
+    from .keystore import KeystoreError, passphrase_from_env_or_prompt, save
     k = KeyPair.generate()
-    p = Path(out)
-    p.write_text(json.dumps({"secret": k.secret_hex(), "address": k.address}))
     try:
-        p.chmod(0o600)
-    except OSError:
-        pass
-    print(f"wrote {out}\naddress: {k.address}\nThis file IS the account. Back it up; anyone who reads it can spend.")
+        save(k, out, passphrase_from_env_or_prompt("new passphrase: ", confirm=True) if encrypt else None)
+    except KeystoreError as err:
+        raise SystemExit(str(err))
+    print(f"wrote {out}\naddress: {k.address}\n" + ("Encrypted with your passphrase. Back up the file AND remember the passphrase."
+          if encrypt else "This file IS the account. Back it up; anyone who reads it can spend. (--encrypt seals it with a passphrase.)"))
     return 0
 
 

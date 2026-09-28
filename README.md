@@ -139,7 +139,7 @@ jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
 jurisledger all                    # run all eleven experiments (101 claims)
-python -m pytest                   # 143 tests; every printed claim is also asserted
+python -m pytest                   # 153 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -149,9 +149,10 @@ The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed2
 | You are | You run | You get |
 |---|---|---|
 | A clerk, journalist or citizen | open `register.html` | A browsable public register in the site's visual style: contracts and who opened them, obligations and their status, national accounts, review flags, validators — and a *Verify* button on every contract that checks it in the browser. One self-contained file, no server, nothing fetched from the internet |
-| Anyone with a ledger export | open the [explorer](https://normansrule.github.io/juris-ledger/explorer.html) and drop `chain.json` | Every block's links, Merkle root, signatures and certificate checked in the browser as the chain animates in; blocks, transactions in plain sentences, one account followed across blocks, and GDP up to any block |
+| Anyone with a ledger export | open the [explorer](https://normansrule.github.io/juris-ledger/explorer.html) and drop `chain.json` | Every block's links, Merkle root, signatures and certificate checked in the browser as the chain animates in; blocks, transactions in plain sentences, one account followed across blocks, GDP up to any block, the four fraud detectors with ring diagrams, and a **3D view**: the chain as a tower of blocks with validators orbiting it, and money flowing between every account |
 | A lawyer, arbitrator or auditor | `jurisledger verify evidence.json validators.json`, or drop the file on the explainer's step 8 — nothing is uploaded | A plain-language verdict on one contract — who signed, what was paid and when, what the arbitrator decided — checked offline against validator keys *you* supply. Exit code 0 or 1, so it scripts |
 | A person paying or being paid | `jurisledger wallet new / register / balance / pay HOST:PORT` | A command-line wallet: amounts in ordinary units, nonce fetched from the node, waits for finality, plain-language errors |
+| A statistics office or dashboard | `jurisledger index`, `query`, `metrics` | A SQLite index built incrementally from verified blocks: GDP for any block range in a fraction of a millisecond, account histories, contract timelines, a per-block time series. See [`docs/DATA.md`](docs/DATA.md) |
 | An operator | `jurisledger init`, `jurisledger node …`, `jurisledger status HOST:PORT`, `jurisledger snapshot` | One validator process per machine, listening on a port, storing blocks on disk; `jurisledger cluster` shows the whole choreography on one machine first |
 | A statistics office, regulator or rival validator | `jurisledger audit chain.json` | The entire ledger replayed from its founding record: every signature, Merkle root, state digest and commit certificate |
 
@@ -366,10 +367,13 @@ jurisledger/
   cluster.py       launches N node processes locally and exercises them (pay, kill, rejoin)
   wallet.py        command-line wallet against a running validator
   deploy.py        multi-machine deployment files (genesis, peers, per-machine key folders)
+  keystore.py      key files sealed with a passphrase (scrypt + AES-256-GCM)
+  index.py         incremental SQLite index: queries and per-block metrics
 site/index.html    the interactive explainer (deployed to GitHub Pages by .github/workflows/pages.yml)
 site/explorer.html browser ledger explorer: structural audit, blocks, transactions, accounts, GDP
-site/verify.js     evidence verifier, ledger audit and GDP in JavaScript (WebCrypto), tested against the Python ones
+site/verify.js     evidence verifier, ledger audit, GDP and fraud detectors in JavaScript (WebCrypto), tested against the Python ones
 site/style.css     the shared visual system
+site/ledger3d.js   dependency-free 3D views of the chain and of money flows
 assets/banner.svg  animated README banner
   contracts.py     wallet helpers, contract vault, audit trail, provenance tree
   legal.py         obligations, compliance, dispute records, offline-verifiable evidence files
@@ -383,7 +387,7 @@ assets/banner.svg  animated README banner
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
   experiments.py   the eleven experiments; every claim is a checked boolean
-tests/             143 tests
+tests/             153 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```
@@ -392,6 +396,7 @@ examples/          quickstart.py
 
 | Document | Contents |
 |---|---|
+| [`docs/DATA.md`](docs/DATA.md) | The SQLite index: commands, tables, why it can be trusted, measured speed |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | Running validators on separate machines: `jurisledger init`, per-machine folders, operations, a two-machine exercise |
 | [`docs/GOVERNMENT.md`](docs/GOVERNMENT.md) | Blueprint for public-sector use: who validates, who issues identity, phased rollout, capacity, what must exist outside the code |
 | [`docs/LEGAL.md`](docs/LEGAL.md) | How the design maps to contract and evidence law concepts; what a lawyer should question |

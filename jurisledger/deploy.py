@@ -20,7 +20,11 @@ from .crypto import KeyPair
 
 
 def init(out_dir: str, validators: List[str], issuers: List[str], chain_id: str, min_attestations: int,
-         unverified_limit_cents: int, recovery_delay: int, treasury_cents: int) -> Dict[str, str]:
+         unverified_limit_cents: int, recovery_delay: int, treasury_cents: int,
+         passphrase: str | None = None) -> Dict[str, str]:
+    """With ``passphrase`` every key file is sealed (scrypt + AES-256-GCM); validators then start
+    with JURISLEDGER_PASSPHRASE set, or type it at the prompt."""
+    from .keystore import save
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     vkeys = [KeyPair.generate() for _ in validators]
@@ -43,8 +47,7 @@ def init(out_dir: str, validators: List[str], issuers: List[str], chain_id: str,
         d = out / f"validator-{i}"
         d.mkdir(exist_ok=True)
         keyfile = d / f"validator-{i}.key.json"
-        keyfile.write_text(json.dumps({"secret": k.secret_hex(), "address": k.address}))
-        keyfile.chmod(0o600)
+        save(k, keyfile, passphrase)
         port = host.rsplit(":", 1)[1]
         script = d / "start.sh"
         script.write_text(f'''#!/usr/bin/env bash
@@ -56,11 +59,7 @@ exec jurisledger node --genesis ../genesis.json --key validator-{i}.key.json --p
 ''')
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
     for n, k in ikeys.items():
-        f = out / f"issuer-{n}.key.json"
-        f.write_text(json.dumps({"secret": k.secret_hex(), "address": k.address}))
-        f.chmod(0o600)
-    tf = out / "treasury.key.json"
-    tf.write_text(json.dumps({"secret": treasury.secret_hex(), "address": treasury.address}))
-    tf.chmod(0o600)
+        save(k, out / f"issuer-{n}.key.json", passphrase)
+    save(treasury, out / "treasury.key.json", passphrase)
     return {"genesis": str(out / "genesis.json"), "peers": str(out / "peers.json"),
             "validators": ", ".join(f"validator-{i}/" for i in range(len(validators)))}

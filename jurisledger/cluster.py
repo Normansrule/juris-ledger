@@ -44,8 +44,9 @@ def write_cluster_files(out: Path, n: int, chain_id: str = "cluster-local") -> D
     (out / "genesis.json").write_text(json.dumps(genesis, indent=1))
     peers = [f"127.0.0.1:{p}" for p in ports]
     (out / "peers.json").write_text(json.dumps(peers, indent=1))
+    from .keystore import save
     for i, k in enumerate(keys):
-        (out / f"validator-{i}.key.json").write_text(json.dumps({"secret": k.secret_hex(), "address": k.address}))
+        save(k, out / f"validator-{i}.key.json")
     (out / "wallets.json").write_text(json.dumps({nm: w.key.secret_hex() for nm, w in people.items()}))
     return {"genesis": genesis, "peers": peers, "ports": ports, "people": people, "keys": keys}
 

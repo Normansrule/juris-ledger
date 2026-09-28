@@ -46,13 +46,16 @@
 
 | 22 | A forged snapshot | A snapshot is accepted only with a quorum certificate from validators the verifier already trusts, and only if the restored state hashes to the certified `state_root`; the access log is checked against its rolling digest | A snapshot hides nothing but also proves nothing about history before it; keep archives |
 
+| 23 | A key file is copied from a disk or backup | Key files can be sealed with a passphrase (scrypt, then AES-256-GCM with the address as associated data); plain key files are written mode 600 and a warning is printed if they are readable by others | A weak passphrase; a machine compromised while the key is in memory |
+| 24 | One account floods the ledger with valid transactions | A validator-voted policy caps transactions per account per block (`max_tx_per_block`); excess transactions wait for later blocks instead of being dropped; government, validators and issuers are exempt | Many accounts flooding together; per-source network rate limits and identity attestations bound that |
+
 ## Known gaps
 
 - **Transport.** Connections are TLS 1.3; a validator's certificate is self-signed by its own Ed25519 key and checked by pinning against the genesis, so no certificate authority is involved and a stolen hostname gains nothing. Peers prove key possession by signing a per-connection challenge inside the tunnel; only proven peers may send consensus or block-sync frames, and a peer may only relay under its own index. Inbound connections are capped at 256 and each source address may open at most 60 connections per 10 seconds. Still missing: any defence against volumetric flooding of the listener itself, which is a network-layer job.
 - **Snapshot trust anchor.** `Chain.load` checks a snapshot against the *genesis* validators by default. After governance has changed the validator set, the verifier must supply the current set it trusts, or verify the governance votes from an archive first.
 - **Empty blocks.** An idle proposer waits two seconds and then proposes an empty block, so a quiet ledger still grows. Acceptable for a public register; tune `IDLE_BLOCK_SECONDS` or add a proper idle mode for low-volume deployments.
 - **The one-third bound is a hard limit.** Two colluding validators out of four fork even the two-phase protocol. What remains is accountability: the conflicting signatures are evidence. Choosing validators so that no single interest controls a third of the seats is therefore a governance requirement, not a detail.
-- **No fees or rate limits.** Spam resistance is out of scope.
+- **No fees.** Spam is bounded by the per-account block quota, the unverified-payment cap and network rate limits rather than by fees.
 - **Validator and issuer keys** change only through governance votes (remove the old key, add the new); there is no in-place rotation for them.
 - **Timestamps.** Blocks now carry the proposer's clock and each vote endorses it; validators refuse a header more than five minutes from their own clock. A finalised timestamp is therefore within tolerance of an honest clock, not exact. Fine for due dates measured in blocks or hours; not for microsecond ordering.
 - **Long-range history rewriting by retired validators** is not addressed; standard mitigations are checkpoints and unbonding periods.

@@ -230,5 +230,88 @@
     return r;
   }
 
-  root.JurisVerify = { canonical, txid, headerHash, verifyBundle, auditChain, merkleRoot, accountsOf, expenditure, supported, sha256hex, quorum };
+  // ---- review flags: the four detectors of jurisledger/fraud.py ------------- //
+  // Same thresholds and rules, so a statistics office's command-line run and a
+  // journalist's browser see the same leads.  A flag is a lead, never a verdict.
+  function payments(exported) {
+    const out = [];
+    for (const b of exported.blocks || []) for (const t of b.txs) if (t.kind === "PAYMENT") out.push({ h: b.header.height, t });
+    return out;
+  }
+  const NON_TRADE = new Set(["WAGES", "TAX", "TRANSFER"]);
+
+  function structuring(exported, threshold = 1000000, band = 0.10, minCount = 3, window = 5) {
+    const low = Math.floor(threshold * (1 - band)), hits = new Map();
+    for (const { h, t } of payments(exported)) {
+      const a = t.payload.amount;
+      if (a >= low && a < threshold) { if (!hits.has(t.sender)) hits.set(t.sender, []); hits.get(t.sender).push([h, a]); }
+    }
+    const flags = [];
+    for (const [sender, items] of hits) {
+      items.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+      let best = [];
+      for (let i = 0; i < items.length; i++) { const run = items.slice(i).filter(x => x[0] - items[i][0] <= window); if (run.length > best.length) best = run; }
+      if (best.length >= minCount) flags.push({ detector: "structuring", account: sender, count: best.length,
+        total: best.reduce((s, x) => s + x[1], 0), blocks: [best[0][0], best[best.length - 1][0]] });
+    }
+    return flags;
+  }
+
+  function circularFlows(exported, maxLen = 5, tolerance = 0.10, window = 6) {
+    const edges = new Map();
+    for (const { h, t } of payments(exported)) {
+      const p = t.payload;
+      if (NON_TRADE.has(p.purpose) || p.amount < 1) continue;
+      if (!edges.has(t.sender)) edges.set(t.sender, []);
+      edges.get(t.sender).push({ to: p.to, amt: p.amount, h, id: t.signature });
+    }
+    const found = new Map();
+    function walk(origin, node, path, amounts, heights, ids) {
+      for (const e of edges.get(node) || []) {
+        if (amounts.length && !((1 - tolerance) * amounts[0] <= e.amt && e.amt <= (1 + tolerance) * amounts[0])) continue;
+        if (heights.length && !(heights[heights.length - 1] <= e.h && e.h <= heights[0] + window)) continue;
+        if (e.to === origin && path.length >= 2) {
+          const key = [...ids, e.id].sort().join("|");
+          if (!found.has(key)) found.set(key, { detector: "circular_flow", accounts: [...path], hops: path.length,
+            amounts: [...amounts, e.amt], total: amounts.reduce((s, x) => s + x, 0) + e.amt, blocks: [heights[0], e.h], signatures: [...ids, e.id] });
+        } else if (!path.includes(e.to) && path.length < maxLen) {
+          walk(origin, e.to, [...path, e.to], [...amounts, e.amt], [...heights, e.h], [...ids, e.id]);
+        }
+      }
+    }
+    for (const origin of edges.keys()) walk(origin, origin, [origin], [], [], []);
+    const unique = new Map();
+    for (const f of found.values()) { const k = [...f.accounts].sort().join("|"); if (!unique.has(k) || f.blocks[0] < unique.get(k).blocks[0]) unique.set(k, f); }
+    return [...unique.values()].sort((a, b) => b.total - a.total);
+  }
+
+  const BENFORD = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => Math.log10(1 + 1 / d));
+  function benford(exported, minPayments = 60, critical = 20.09) {
+    const by = new Map();
+    for (const { t } of payments(exported)) { if (NON_TRADE.has(t.payload.purpose)) continue; if (!by.has(t.sender)) by.set(t.sender, []); by.get(t.sender).push(t.payload.amount); }
+    const flags = [];
+    for (const [sender, amounts] of by) {
+      const n = amounts.length; if (n < minPayments) continue;
+      const counts = new Array(9).fill(0); for (const a of amounts) counts[+String(a)[0] - 1]++;
+      const chi2 = counts.reduce((s, c, i) => s + (c - n * BENFORD[i]) ** 2 / (n * BENFORD[i]), 0);
+      if (chi2 > critical) flags.push({ detector: "benford", account: sender, payments: n, chi2: Math.round(chi2 * 10) / 10, critical });
+    }
+    return flags;
+  }
+
+  function duplicatePledges(exported) {
+    const lenders = new Map();
+    for (const { t } of payments(exported)) {
+      const p = t.payload; if (p.purpose !== "FINANCIAL" || !("invoice" in p)) continue;
+      const k = p.invoice + "|" + p.to; if (!lenders.has(k)) lenders.set(k, new Set()); lenders.get(k).add(t.sender);
+    }
+    return [...lenders].filter(([, ls]) => ls.size > 1).map(([k, ls]) => ({ detector: "duplicate_invoice_financing",
+      invoice: k.split("|")[0], borrower: k.split("|")[1], lenders: [...ls].sort() }));
+  }
+
+  function reviewFlags(exported, threshold = 1000000) {
+    return [...structuring(exported, threshold), ...circularFlows(exported), ...benford(exported), ...duplicatePledges(exported)];
+  }
+
+  root.JurisVerify = { canonical, txid, headerHash, verifyBundle, auditChain, merkleRoot, accountsOf, expenditure, reviewFlags, circularFlows, structuring, benford, duplicatePledges, supported, sha256hex, quorum };
 })(typeof globalThis !== "undefined" ? globalThis : this);
