@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.0 — a self-verifying public register
+- `jurisledger register` and `jurisledger demo` now render the public register in the site's shared visual system (from a source checkout; otherwise the built-in styles).
+- Every contract in the register carries its own evidence file and a *Verify this contract in your browser* button backed by `site/verify.js`: signatures, certificates and Merkle paths are checked locally against the genesis validators embedded in the page. Embedded data is escaped so no string in it can close its script element.
+- 143 tests.
+
 ## 0.14.0 — arbitration, visualized
 - Explainer step 8, "Settle a dispute": a lease with three instalments on a block timeline. Advance time, pay or miss, open a dispute (the obligation turns *disputed*, not *overdue*), and issue an award with sliders that physically cannot exceed the original debt or bring a due date forward. Two cheat buttons show the validators' refusals. Evidence verification moves to step 9.
 

@@ -6,8 +6,10 @@ is rendered from a chain that has just been re-audited from block 1, and says so
 """
 from __future__ import annotations
 
+import json
 from html import escape as e
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from . import fraud, legal
 from .chain import Chain
@@ -48,6 +50,78 @@ summary:focus-visible{outline:2px solid var(--seal)} details>div{padding:0 .9rem
 input[type=search]{font:inherit;padding:.45rem .6rem;border:1px solid var(--line);background:var(--sheet);color:var(--ink);width:min(28rem,100%)}
 """
 
+SITE = Path(__file__).resolve().parent.parent / "site"
+
+# When the site's shared visual system is available (a source checkout), the register
+# uses it, and every contract gets a "verify in this browser" button backed by the same
+# verify.js the explainer uses.  Otherwise the built-in styles above are used.
+BRIDGE = """
+:root{--soft:var(--ink-2);--line:var(--rule);--good:var(--verified);--warn:var(--amber);--bad:var(--seal);--bar:var(--ink)}
+main{max-width:1180px;margin:0 auto;padding:2.2rem clamp(1rem,4vw,3rem) 4rem}
+h1{font-size:clamp(2rem,4.6vw,3.2rem)} h2{margin:3rem 0 .8rem}
+.seal{border-left:6px solid var(--verified);background:var(--sheet);padding:1rem 1.25rem;margin:1.5rem 0;max-width:76ch;border-radius:0 10px 10px 0}
+.seal strong{color:var(--verified)}
+nav{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--rule);padding-bottom:.6rem;margin-top:1.5rem}
+nav a{margin:0 1.25rem .25rem 0;color:var(--ink);text-decoration:none;border-bottom:2px solid transparent;padding:.15rem 0}
+nav a:hover,nav a:focus-visible{border-bottom-color:var(--seal);outline:none}
+.wide{overflow-x:auto;background:var(--sheet);border:1px solid var(--rule);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:.5rem .75rem;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--ink-2);font-size:.9rem;white-space:nowrap} td.n,th.n{text-align:right}
+tr:last-child td{border-bottom:0}
+.soft{color:var(--ink-2)}
+.figures{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:0 2rem;max-width:60rem}
+.figures div{border-top:1px solid var(--rule);padding:.6rem 0;display:flex;justify-content:space-between;gap:1rem}
+.figures b{font-family:var(--serif);font-size:1.15rem;font-weight:500;font-variant-numeric:tabular-nums}
+.bar{height:.6rem;background:var(--ink);min-width:2px;border-radius:2px;margin:0}
+details{background:var(--sheet);border:1px solid var(--rule);margin:.6rem 0;border-radius:10px}
+summary{cursor:pointer;padding:.8rem 1rem;font-size:1.02rem}
+summary>*{margin-right:.9rem}
+summary:focus-visible{outline:2px solid var(--ink)} details>div{padding:0 1rem 1rem}
+input[type=search]{font:inherit;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:8px;background:var(--sheet);color:var(--ink);width:min(28rem,100%)}
+.evout{margin-top:.6rem}
+.evout ol{list-style:none;padding:0;margin:.4rem 0}
+.evout li{padding:.3rem 0;border-bottom:1px solid var(--rule);font-size:.92rem}
+.evout .v{font-family:var(--serif);font-size:1.3rem}
+"""
+
+VERIFY_UI = """
+(function () {
+  var V = window.JurisVerify, vals = JSON.parse(document.getElementById("jl-validators").textContent);
+  var words = {CONTRACT_CREATE:"drafted it",CONTRACT_SIGN:"signed it",PAYMENT:"paid",CONTRACT_ACCESS:"opened the text",DISPUTE_OPEN:"opened a dispute",
+    DISPUTE_FILE:"filed a document",DISPUTE_AWARD:"issued the award",CONTRACT_GRANT:"granted access",DISPUTE_WITHDRAW:"withdrew the dispute"};
+  var esc = function (t) { return String(t).replace(/[&<>]/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c]; }); };
+  document.querySelectorAll("button[data-ev]").forEach(function (btn) {
+    btn.addEventListener("click", async function () {
+      var out = document.getElementById("out-" + btn.dataset.ev);
+      if (!V || !(await V.supported())) { out.innerHTML = "<p>This browser cannot check Ed25519 signatures. Use <code>jurisledger verify</code>.</p>"; return; }
+      btn.disabled = true; out.innerHTML = "<p class='soft'>Checking every signature, certificate and Merkle path…</p>";
+      var bundle = JSON.parse(document.getElementById(btn.dataset.ev).textContent), labels = bundle.labels || {};
+      var r = await V.verifyBundle(bundle, vals);
+      var rows = r.timeline.map(function (t) {
+        var what = (words[t.kind] || t.kind.toLowerCase()) + (t.kind === "PAYMENT" ? " " + (t.detail.amount / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : "");
+        return "<li><span class='" + (t.ok ? "good" : "bad") + "'>" + (t.ok ? "✓" : "✗") + "</span> block " + t.height + " · <strong>" + esc(labels[t.by] || t.by.slice(0, 10)) + "</strong> " + esc(what) + " <span class='soft'>(" + t.votes + " validator signatures)</span></li>";
+      }).join("");
+      out.innerHTML = (r.valid ? "<div class='v good'>Verified in this browser</div><p>Every step below is signed by its author and finalised by a quorum of this ledger's validators; all parties signed the same text.</p>"
+        : "<div class='v bad'>Rejected</div><ul>" + r.problems.map(function (p) { return "<li class='bad'>" + esc(p) + "</li>"; }).join("") + "</ul>") + "<ol>" + rows + "</ol>";
+      btn.disabled = false;
+    });
+  });
+})();
+"""
+
+
+def _asset(name: str) -> Optional[str]:
+    p = SITE / name
+    return p.read_text() if p.exists() else None
+
+
+def _json_script(element_id: str, data: Any) -> str:
+    """Embed data for scripts without letting any string in it close the <script> element."""
+    body = json.dumps(data, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    return f'<script type="application/json" id="{element_id}">{body}</script>'
+
+
 JS = """
 const q=document.getElementById('find');
 if(q){q.addEventListener('input',()=>{const t=q.value.toLowerCase();
@@ -60,7 +134,7 @@ def money(cents: int) -> str:
 
 
 def _times(n: int) -> str:
-    return "once" if n == 1 else "twice" if n == 2 else f"{n} times"
+    return "never" if n == 0 else "once" if n == 1 else "twice" if n == 2 else f"{n} times"
 
 
 def _status(word: str) -> str:
@@ -77,13 +151,17 @@ def render(chain: Chain, reporting_threshold: int = 10_000_00) -> str:
     flags = fraud.run_all(audited, reporting_threshold) if n_tx else []
     out: List[str] = []
     w = out.append
+    shared, verify_js = _asset("style.css"), _asset("verify.js")
+    css = (shared + BRIDGE) if shared else CSS
+    n_contract = 0
 
     w(f"<h1>Public register of {e(audited.chain_id)}</h1>")
     w('<p class="soft">Signed contracts, payments and the accounts derived from them, as finalised by the validators.</p>')
     w(f'<div class="seal"><strong>Independently re-verified.</strong> This page was produced by replaying blocks 1 to '
       f'{audited.height} from the founding record: {n_tx:,} transaction signatures, every Merkle root, every state '
       f'digest and every commit certificate were checked. State digest <code>{e(st.root()[:24])}</code>. '
-      f'You do not have to trust this page: run <code>jurisledger audit chain.json</code> on the same file.</div>')
+      f'You do not have to trust this page: run <code>jurisledger audit chain.json</code> on the same file'
+      + (', or press <em>Verify</em> on any contract below to check it in this browser.' if verify_js else '.') + '</div>')
     w('<nav aria-label="Sections"><a href="#contracts">Contracts</a><a href="#accounts-of-the-economy">National accounts</a>'
       '<a href="#flags">Review flags</a><a href="#validators">Validators and issuers</a><a href="#blocks">Blocks</a>'
       '<a href="#holders">Account holders</a></nav>')
@@ -123,6 +201,11 @@ def render(chain: Chain, reporting_threshold: int = 10_000_00) -> str:
                 target = st.contracts[r["id"]]["title"] if r["kind"] == "contract" else (r.get("uri") or r["hash"][:16])
                 w(f'<li>{e(r["relation"])}: {e(target)}</li>')
             w("</ul>")
+        if verify_js:
+            w(_json_script(f"jl-ev-{n_contract}", legal.evidence_bundle(audited, cid)))
+            w(f'<div class="controls"><button class="btn" data-ev="jl-ev-{n_contract}">Verify this contract in your browser</button></div>'
+              f'<div class="evout" id="out-jl-ev-{n_contract}"></div>')
+        n_contract += 1
         trail = audit_trail(audited, cid)
         if trail:
             w('<h3>Who opened, used or cited it</h3><div class="wide"><table><tr><th class="n">Block</th><th>Action</th><th>By</th><th>Note</th></tr>')
@@ -213,7 +296,10 @@ def render(chain: Chain, reporting_threshold: int = 10_000_00) -> str:
     w('<p class="soft" style="margin-top:3rem">Research prototype. Balances and counterparties are public in this version; '
       'see the threat model for what that means.</p>')
 
+    scripts = f"<script>{JS}</script>"
+    if verify_js:
+        scripts = _json_script("jl-validators", audited.genesis["validators"]) + f"<script>{verify_js}</script><script>{VERIFY_UI}</script>" + scripts
     return ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<title>Public register of {e(audited.chain_id)}</title><style>{CSS}</style></head>'
-            f'<body><main>{"".join(out)}</main><script>{JS}</script></body></html>')
+            f'<title>Public register of {e(audited.chain_id)}</title><style>{css}</style></head>'
+            f'<body><main>{"".join(out)}</main>{scripts}</body></html>')

@@ -125,3 +125,17 @@ def test_explainer_site_is_self_contained_and_covers_every_step():
         assert f'id="{anchor}"' in text
     css = (site / "style.css").read_text()
     assert "prefers-reduced-motion" in css and "prefers-color-scheme" in css
+
+
+
+def test_register_embeds_verifiable_evidence_for_every_contract(demo):
+    import re as _re
+    from jurisledger import legal
+    html = open(demo["register"]).read()
+    chain = Chain.load(open(demo["chain"]).read())
+    blobs = _re.findall(r'<script type="application/json" id="jl-ev-\d+">(.*?)</script>', html)
+    assert len(blobs) == len(chain.state.contracts) and "JurisVerify" in html
+    vals = json.loads(_re.search(r'id="jl-validators">(.*?)</script>', html).group(1))
+    for b in blobs:
+        report = legal.verify_evidence_bundle(json.loads(b), vals)
+        assert report["valid"] and report["fully_signed"]
