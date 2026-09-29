@@ -13,6 +13,26 @@ jurisledger query ledger.db contract <contract id>       # a contract's whole li
 jurisledger metrics ledger.db -o metrics.csv             # one row per block, for any dashboard
 ```
 
+## Serving it: the read-only API and the dashboard
+
+```bash
+jurisledger api ledger.db                                   # http://127.0.0.1:8080
+jurisledger api ledger.db --follow 127.0.0.1:7701 --every 10  # and keep indexing a live validator
+```
+
+| endpoint | returns |
+|---|---|
+| `/api/status` | chain, height, transaction and account counts, median block time |
+| `/api/gdp?from=A&to=B` | GDP by expenditure for a block range |
+| `/api/metrics?from=A&to=B` | the per-block series (at most 5,000 rows per call) |
+| `/api/accounts/top?n=10` | busiest accounts |
+| `/api/account/<name or address>` | an account's latest payments |
+| `/api/contract/<id>` | a contract's timeline |
+
+The server is read-only (SQLite opened in read-only mode; POST, PUT, DELETE answer 405), serves public data only, parses every parameter as a bounded integer or an exact-match lookup through bound SQL parameters, caps result sizes, rate-limits each client address with a token bucket (429 beyond it), and listens on loopback unless told otherwise. `--follow` exports from a validator over pinned TLS, re-audits the export locally and appends new blocks, so the dashboard stays live.
+
+[`site/dashboard.html`](../site/dashboard.html) reads the API (refreshing every five seconds), a `metrics.csv`, or a bundled sample: activity per block, where the money went (C, I, G, X above the line, imports below), GDP accumulating, and consensus health (signatures per block, extra voting rounds).
+
 ## Why it can be trusted
 
 | property | how |

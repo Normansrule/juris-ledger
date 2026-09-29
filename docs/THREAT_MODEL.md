@@ -49,6 +49,8 @@
 | 23 | A key file is copied from a disk or backup | Key files can be sealed with a passphrase (scrypt, then AES-256-GCM with the address as associated data); plain key files are written mode 600 and a warning is printed if they are readable by others | A weak passphrase; a machine compromised while the key is in memory |
 | 24 | One account floods the ledger with valid transactions | A validator-voted policy caps transactions per account per block (`max_tx_per_block`); excess transactions wait for later blocks instead of being dropped; government, validators and issuers are exempt | Many accounts flooding together; per-source network rate limits and identity attestations bound that |
 
+| 25 | The statistics API is abused or used to change data | Read-only database connection and no write routes (405); bound parameters only; capped result sizes; per-client token-bucket rate limit (429); loopback by default; it serves only data the public ledger already publishes | Volumetric flooding at the network layer; put it behind a reverse proxy for public exposure |
+
 ## Known gaps
 
 - **Transport.** Connections are TLS 1.3; a validator's certificate is self-signed by its own Ed25519 key and checked by pinning against the genesis, so no certificate authority is involved and a stolen hostname gains nothing. Peers prove key possession by signing a per-connection challenge inside the tunnel; only proven peers may send consensus or block-sync frames, and a peer may only relay under its own index. Inbound connections are capped at 256 and each source address may open at most 60 connections per 10 seconds. Still missing: any defence against volumetric flooding of the listener itself, which is a network-layer job.

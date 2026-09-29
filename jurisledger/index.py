@@ -201,10 +201,11 @@ class Index:
                                (contract_id,)).fetchall()
         return [{"height": h, "kind": k, "actor": n, "detail": d} for h, k, n, d in rows]
 
-    def metrics(self) -> Iterable[Dict[str, Any]]:
+    def metrics(self, start: int = 0, end: Optional[int] = None) -> Iterable[Dict[str, Any]]:
         cur = self.db.execute("""SELECT b.height, b.timestamp, b.n_votes, b.commit_round, m.n_tx, m.n_payments, m.volume,
                                         m.c, m.i, m.g, m.x, m.m, m.confidential
-                                 FROM blocks b JOIN block_metrics m ON m.height = b.height ORDER BY b.height""")
+                                 FROM blocks b JOIN block_metrics m ON m.height = b.height
+                                 WHERE b.height BETWEEN ? AND ? ORDER BY b.height""", (start, 10 ** 15 if end is None else end))
         cols = [d[0] for d in cur.description]
         for row in cur:
             d = dict(zip(cols, row))

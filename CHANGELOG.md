@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.18.0 — live data: an API and a dashboard
+- `api.py` and `jurisledger api`: a read-only JSON API over the index (status, GDP by range, per-block metrics, top accounts, account history, contract timeline). SQLite read-only mode, GET only, bound parameters, capped results, per-client token-bucket rate limiting, loopback by default, private-network preflight so the public site can read a local API. `--follow HOST:PORT` keeps indexing a live validator over pinned TLS.
+- `site/dashboard.html`: KPIs and four hand-drawn animated charts with hover details — activity, where the money went (imports below the line), GDP accumulating, and consensus health — fed live by the API, by `metrics.csv`, or by a bundled 60-block sample run on the two-phase network with one validator offline (its turns show as extra rounds).
+- 157 tests.
+
 ## 0.17.0 — 3D views, sealed keys, spam quotas, a data index
 - **3D.** `site/ledger3d.js`, a dependency-free 3D renderer, adds two views to the explorer: *the chain* (every block a box on a rising spiral, sized by its transactions, linked to its parent, with the validators orbiting and amber vote lines showing who signed the selected block) and *money flows* (every account a sphere grouped by role, every trading pair an arc weighted by volume; a review flag lights its ring in red). Drag, zoom, click a block.
 - **Security.** Encrypted key files (`keystore.py`: scrypt + AES-256-GCM, address bound as associated data) for `keygen --encrypt`, `wallet new --encrypt` and `init --encrypt`; validators read `JURISLEDGER_PASSPHRASE` or prompt. Plain key files are created mode 600 and flagged if readable by others. A per-account, per-block transaction quota (`max_tx_per_block`) set by validator vote; excess transactions wait instead of being dropped; institutions exempt.

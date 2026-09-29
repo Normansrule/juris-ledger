@@ -18,6 +18,8 @@
   jurisledger index CHAIN.json|HOST:PORT [-o ledger.db]   audit, then add new blocks to a SQLite index
   jurisledger query ledger.db gdp [FROM TO] | account NAME | top | contract ID
   jurisledger metrics ledger.db [-o metrics.csv]         per-block time series for dashboards
+  jurisledger api ledger.db [--port 8080] [--follow HOST:PORT --every 10]
+                                          read-only JSON API over the index (feeds site/dashboard.html)
   jurisledger status HOST:PORT            height, state digest and mempool of a running validator
   jurisledger export HOST:PORT [-o FILE]  download and re-audit a running validator's ledger
   jurisledger all | NAME                  run every experiment, or one of:
@@ -125,6 +127,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--to"); ap.add_argument("--amount"); ap.add_argument("--purpose")
     ap.add_argument("--name"); ap.add_argument("--role", default="household"); ap.add_argument("--sector", default="")
     ap.add_argument("--pin", help="validator address to pin the TLS certificate to")
+    ap.add_argument("--host", default="127.0.0.1"); ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--follow"); ap.add_argument("--every", type=float, default=10.0)
     ap.add_argument("--encrypt", action="store_true", help="seal new key files with a passphrase (scrypt + AES-256-GCM)")
     ap.add_argument("--validators"); ap.add_argument("--issuers", default="")
     ap.add_argument("--chain-id", default="jurisledger-net"); ap.add_argument("--min-attestations", type=int, default=2)
@@ -256,6 +260,23 @@ def main(argv: list[str]) -> int:
                 print(f"  block {e['height']:>5}  {e['kind'].replace('_', ' ').lower():<18} {e['actor'] or '?':<24} {e['detail']}")
         else:
             print("query what? gdp [FROM TO] | account NAME | top [N] | contract ID"); return 2
+        return 0
+    if cmd == "api" and len(args.paths) == 1:
+        from .api import serve
+        try:
+            server, stop = serve(args.paths[0], args.host, args.port, follow_source=args.follow, every=args.every,
+                                 pin=args.pin, log=lambda m: print(m, flush=True))
+        except (FileNotFoundError, OSError) as err:
+            print(err); return 1
+        print(f"read-only API on http://{args.host}:{args.port}/api/status"
+              + (f", following {args.follow} every {args.every:g} s" if args.follow else "")
+              + "\nopen site/dashboard.html and point it here. Ctrl+C to stop.", flush=True)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            stop.set(); server.server_close()
         return 0
     if cmd == "metrics" and len(args.paths) == 1:
         from .index import Index

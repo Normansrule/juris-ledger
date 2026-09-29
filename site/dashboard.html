@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>JurisLedger dashboard — the economy and the network, block by block</title>
+<meta name="description" content="A live operations and statistics dashboard for a JurisLedger network: transactions, where the money went, GDP over time, and consensus health.">
+<link rel="stylesheet" href="style.css">
+<style>
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));gap:.8rem;margin:1.2rem 0}
+.kpi{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:.9rem 1rem}
+.kpi b{display:block;font-family:var(--serif);font-size:1.8rem;font-weight:500;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi span{font-size:.85rem;color:var(--ink-2)}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,34rem),1fr));gap:1rem}
+.chart{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:1rem;position:relative}
+.chart h2{font-size:1.15rem;margin:0 0 .2rem}
+.chart p{font-size:.85rem;color:var(--ink-2);margin:0 0 .5rem}
+.chart canvas{width:100%;height:230px;display:block}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.8rem;padding:.35rem .55rem;border-radius:6px;white-space:nowrap;display:none;z-index:2}
+.legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.8rem;color:var(--ink-2);margin:.2rem 0 .4rem}
+.legend span::before{content:"";display:inline-block;width:.7rem;height:.7rem;border-radius:2px;margin-right:.3rem;vertical-align:-.05rem;background:var(--c)}
+.src{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
+.src input{font:inherit;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--ink);width:17rem}
+.live{display:inline-flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--ink-2)}
+.live i{width:.55rem;height:.55rem;border-radius:50%;background:var(--rule)}
+.live.on i{background:var(--verified);animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.3}}
+table.top{width:100%;border-collapse:collapse;font-size:.92rem;font-variant-numeric:tabular-nums}
+table.top td,table.top th{padding:.45rem .5rem;border-bottom:1px solid var(--rule);text-align:left}
+table.top td.n,table.top th.n{text-align:right}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="index.html">JurisLedger</a>
+  <nav class="folios" aria-label="Site"><a href="index.html">How it works</a><a href="explorer.html">Explore a ledger</a><a href="dashboard.html" aria-current="page"><strong>Dashboard</strong></a><a href="https://github.com/Normansrule/juris-ledger">Code</a></nav>
+</div></header>
+
+<main class="wrap" style="padding-top:2.5rem;padding-bottom:4rem">
+  <h1 style="font-size:clamp(2rem,5vw,3.2rem)">The economy and the network, block by block.</h1>
+  <p style="font-size:1.1rem;color:var(--ink-2);max-width:70ch">What a statistics office or a network operator watches: how much is happening, where the money goes, how gross domestic product (GDP) builds up, and whether the validators are keeping up. Fed by <code>jurisledger api</code>, by a <code>metrics.csv</code>, or by the bundled sample.</p>
+
+  <div class="stage" style="grid-template-columns:1fr;margin-top:1.2rem">
+    <div class="src">
+      <button class="btn" id="sample">Show the sample economy</button>
+      <input id="apiUrl" value="http://127.0.0.1:8080" aria-label="API address" spellcheck="false">
+      <button class="btn ghost" id="connect">Connect live</button>
+      <label class="btn ghost" style="cursor:pointer">Open metrics.csv<input type="file" id="csv" accept=".csv,text/csv" hidden></label>
+      <span class="live" id="live"><i></i><span id="liveText">not connected</span></span>
+    </div>
+    <p class="caption" id="cap" style="min-height:0;margin:.4rem 0 0">To watch a real network: <code>jurisledger index 127.0.0.1:7701 -o ledger.db</code>, then <code>jurisledger api ledger.db --follow 127.0.0.1:7701</code>, then press <strong>Connect live</strong>. The page refreshes every five seconds.</p>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="charts">
+    <section class="chart"><h2>Activity</h2><p>Transactions per block (bars) and public payments (line).</p><canvas id="cTx"></canvas></section>
+    <section class="chart"><h2>Where the money went</h2><p>Spending per block by kind; imports drawn below the line because they subtract from GDP.</p>
+      <div class="legend"><span style="--c:#127C6E">households (C)</span><span style="--c:#0F1F3D">investment (I)</span><span style="--c:#B4720C">government (G)</span><span style="--c:#6B7FA8">exports (X)</span><span style="--c:#B8302F">imports (M)</span></div>
+      <canvas id="cMix"></canvas></section>
+    <section class="chart"><h2>GDP, accumulating</h2><p>C + I + G + X − M summed from block 1, exactly as <code>jurisledger query gdp</code> computes it.</p><canvas id="cGdp"></canvas></section>
+    <section class="chart"><h2>Consensus health</h2><p>Validator signatures on each block (bars) and extra voting rounds needed (dots). Rounds above zero mean a proposer was slow or the network was delayed.</p><canvas id="cHealth"></canvas></section>
+  </div>
+
+  <section class="chart" style="margin-top:1rem"><h2>Busiest accounts</h2><p>By public money paid plus received.</p><table class="top" id="top"></table></section>
+  <p class="note" style="font-size:.88rem;color:var(--ink-2);margin-top:1rem">Everything here is derived from the index, which is built only from audited blocks. Hidden (confidential) payment amounts are not in it; their count per block is.</p>
+</main>
+<footer><div class="wrap">JurisLedger is a research prototype under the MIT licence.</div></footer>
+<script src="sample-metrics.js"></script>
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const cssv = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const money = c => (c / 100).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const compact = c => { const v = c / 100, a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M" : a >= 1e3 ? (v / 1e3).toFixed(0) + "k" : v.toFixed(0); };
+const MIX = [["c", "#127C6E", "households"], ["i", "#0F1F3D", "investment"], ["g", "#B4720C", "government"], ["x", "#6B7FA8", "exports"]];
+let rows = [], timer = null, charts = [];
+
+function kpis(status, rows) {
+  const g = rows.reduce((s, r) => s + r.c + r.i + r.g + r.x - r.m, 0);
+  const sig = rows.length ? rows.reduce((s, r) => s + r.n_votes, 0) / rows.length : 0;
+  const slow = rows.filter(r => r.commit_round > 0).length;
+  const gaps = rows.slice(1).map((r, k) => r.timestamp - rows[k].timestamp).filter(x => x > 0).sort((a, b) => a - b);
+  const items = [[status.height ?? rows.length, "blocks"], [(status.transactions ?? rows.reduce((s, r) => s + r.n_tx, 0)).toLocaleString(), "transactions"],
+    [money(g), "GDP so far"], [sig.toFixed(2), "signatures per block"], [slow, "blocks needing extra rounds"],
+    [gaps.length ? (gaps[gaps.length >> 1] / 1000).toFixed(1) + " s" : "—", "median block time"]];
+  $("#kpis").innerHTML = items.map(([v, l]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join("");
+}
+
+// ---------- one small chart engine: axes, bars, lines, stacked areas, tooltip, sweep-in animation
+function chart(canvas, draw, tipText) {
+  const ctx = canvas.getContext("2d"), tip = document.createElement("div"); tip.className = "tip"; canvas.parentNode.appendChild(tip);
+  let W, H, dpr, progress = reduced ? 1 : 0, hover = -1;
+  const pad = { l: 58, r: 14, t: 10, b: 24 };
+  function size() { const r = canvas.getBoundingClientRect(); dpr = Math.min(2, devicePixelRatio || 1); W = r.width; H = r.height; canvas.width = W * dpr; canvas.height = H * dpr; }
+  function render() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    if (!rows.length) return;
+    const n = rows.length, x = i => pad.l + (W - pad.l - pad.r) * (n === 1 ? 0.5 : i / (n - 1)), bw = Math.max(1.5, (W - pad.l - pad.r) / n * 0.7);
+    draw({ ctx, W, H, pad, n, x, bw, progress, hover, ink: cssv("--ink"), soft: cssv("--ink-2"), rule: cssv("--rule") });
+    if (hover >= 0) { ctx.strokeStyle = cssv("--ink-2"); ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(x(hover), pad.t); ctx.lineTo(x(hover), H - pad.b); ctx.stroke(); ctx.setLineDash([]); }
+  }
+  function animate() { if (progress < 1) { progress = Math.min(1, progress + 0.035); render(); requestAnimationFrame(animate); } else render(); }
+  canvas.addEventListener("mousemove", e => {
+    if (!rows.length) return;
+    const r = canvas.getBoundingClientRect(), fx = (e.clientX - r.left - pad.l) / (W - pad.l - pad.r);
+    hover = Math.max(0, Math.min(rows.length - 1, Math.round(fx * (rows.length - 1)))); render();
+    tip.style.display = "block"; tip.innerHTML = tipText(rows[hover]);
+    tip.style.left = Math.min(W - 180, e.clientX - r.left + 12) + "px"; tip.style.top = (e.clientY - r.top + canvas.offsetTop - 34) + "px";
+  });
+  canvas.addEventListener("mouseleave", () => { hover = -1; tip.style.display = "none"; render(); });
+  new ResizeObserver(() => { size(); render(); }).observe(canvas); size();
+  return { replay() { progress = reduced ? 1 : 0; animate(); }, render };
+}
+function axis(o, max, fmt, min = 0) {
+  const { ctx, W, H, pad, soft, rule } = o, y = v => H - pad.b - (H - pad.t - pad.b) * (v - min) / (max - min || 1);
+  ctx.font = "11px system-ui,sans-serif"; ctx.fillStyle = soft; ctx.strokeStyle = rule; ctx.lineWidth = 1; ctx.textAlign = "right";
+  for (let k = 0; k <= 4; k++) { const v = min + (max - min) * k / 4, yy = y(v); ctx.globalAlpha = .6; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke(); ctx.globalAlpha = 1; ctx.fillText(fmt(v), pad.l - 6, yy + 4); }
+  ctx.textAlign = "center"; const n = rows.length, step = Math.max(1, Math.ceil(n / 8));
+  for (let i = 0; i < n; i += step) ctx.fillText(rows[i].height, o.x(i), H - 6);
+  return y;
+}
+const nice = v => { const p = Math.pow(10, Math.floor(Math.log10(v || 1))); return Math.ceil((v || 1) / p) * p; };
+
+function build() {
+  charts.forEach(c => c.replay && c.replay());
+  if (charts.length) return;
+  charts.push(chart($("#cTx"), o => {
+    const max = nice(Math.max(...rows.map(r => r.n_tx))), y = axis(o, max, v => Math.round(v));
+    rows.forEach((r, i) => { const h = (o.H - o.pad.b - y(r.n_tx)) * o.progress; o.ctx.fillStyle = i === o.hover ? cssv("--amber") : cssv("--verified"); o.ctx.globalAlpha = .8; o.ctx.fillRect(o.x(i) - o.bw / 2, o.H - o.pad.b - h, o.bw, h); });
+    o.ctx.globalAlpha = 1; o.ctx.strokeStyle = o.ink; o.ctx.lineWidth = 2; o.ctx.beginPath();
+    const upto = Math.max(1, Math.ceil(rows.length * o.progress));
+    rows.slice(0, upto).forEach((r, i) => i ? o.ctx.lineTo(o.x(i), y(r.n_payments)) : o.ctx.moveTo(o.x(i), y(r.n_payments))); o.ctx.stroke();
+  }, r => `block ${r.height}: ${r.n_tx} transactions, ${r.n_payments} payments${r.confidential ? `, ${r.confidential} hidden` : ""}`));
+  charts.push(chart($("#cMix"), o => {
+    const tops = rows.map(r => r.c + r.i + r.g + r.x), max = nice(Math.max(...tops, 1)), min = -nice(Math.max(...rows.map(r => r.m), 1));
+    const y = axis(o, max, v => compact(v), min);
+    rows.forEach((r, i) => { let base = 0;
+      MIX.forEach(([k, col]) => { const v = r[k] * o.progress, y0 = y(base), y1 = y(base + v); o.ctx.fillStyle = col; o.ctx.globalAlpha = i === o.hover ? 1 : .82; o.ctx.fillRect(o.x(i) - o.bw / 2, y1, o.bw, y0 - y1); base += v; });
+      o.ctx.fillStyle = "#B8302F"; const y0 = y(0), y1 = y(-r.m * o.progress); o.ctx.fillRect(o.x(i) - o.bw / 2, y0, o.bw, y1 - y0); });
+    o.ctx.globalAlpha = 1; o.ctx.strokeStyle = o.ink; o.ctx.beginPath(); o.ctx.moveTo(o.pad.l, y(0)); o.ctx.lineTo(o.W - o.pad.r, y(0)); o.ctx.stroke();
+  }, r => `block ${r.height}: C ${money(r.c)} · I ${money(r.i)} · G ${money(r.g)} · X ${money(r.x)} · M −${money(r.m)}`));
+  charts.push(chart($("#cGdp"), o => {
+    let acc = 0; const cum = rows.map(r => (acc += r.c + r.i + r.g + r.x - r.m));
+    const max = nice(Math.max(...cum, 1)), y = axis(o, max, v => compact(v));
+    const upto = Math.max(1, Math.ceil(rows.length * o.progress)), g = o.ctx.createLinearGradient(0, o.pad.t, 0, o.H - o.pad.b);
+    g.addColorStop(0, "rgba(18,124,110,.35)"); g.addColorStop(1, "rgba(18,124,110,0)");
+    o.ctx.beginPath(); o.ctx.moveTo(o.x(0), y(0)); cum.slice(0, upto).forEach((v, i) => o.ctx.lineTo(o.x(i), y(v))); o.ctx.lineTo(o.x(upto - 1), y(0)); o.ctx.closePath(); o.ctx.fillStyle = g; o.ctx.fill();
+    o.ctx.strokeStyle = cssv("--verified"); o.ctx.lineWidth = 2.4; o.ctx.beginPath(); cum.slice(0, upto).forEach((v, i) => i ? o.ctx.lineTo(o.x(i), y(v)) : o.ctx.moveTo(o.x(i), y(v))); o.ctx.stroke();
+    if (o.hover >= 0) { o.ctx.fillStyle = cssv("--verified"); o.ctx.beginPath(); o.ctx.arc(o.x(o.hover), y(cum[o.hover]), 4.5, 0, 7); o.ctx.fill(); }
+  }, r => { let s = 0; for (const q of rows) { s += q.c + q.i + q.g + q.x - q.m; if (q === r) break; } return `through block ${r.height}: GDP ${money(s)}`; }));
+  charts.push(chart($("#cHealth"), o => {
+    const max = Math.max(4, ...rows.map(r => r.n_votes)), y = axis(o, max, v => v.toFixed(0));
+    rows.forEach((r, i) => { const h = (o.H - o.pad.b - y(r.n_votes)) * o.progress; o.ctx.fillStyle = o.ink; o.ctx.globalAlpha = i === o.hover ? 1 : .55; o.ctx.fillRect(o.x(i) - o.bw / 2, o.H - o.pad.b - h, o.bw, h);
+      if (r.commit_round > 0) { o.ctx.globalAlpha = 1; o.ctx.fillStyle = cssv("--seal"); o.ctx.beginPath(); o.ctx.arc(o.x(i), y(Math.min(max, r.commit_round)) - 6, 4, 0, 7); o.ctx.fill(); } });
+    o.ctx.globalAlpha = 1;
+  }, r => `block ${r.height}: ${r.n_votes} signatures, finalised in round ${r.commit_round}`));
+  charts.forEach(c => c.replay());
+}
+
+function show(data, label) {
+  rows = data.rows || []; kpis(data.status || {}, rows); build();
+  $("#top").innerHTML = "<tr><th>account</th><th>role</th><th class='n'>paid</th><th class='n'>received</th></tr>" +
+    (data.top || []).map(a => `<tr><td>${String(a.name).replace(/</g, "&lt;")}</td><td>${a.role}</td><td class="n">${money(a.paid)}</td><td class="n">${money(a.received)}</td></tr>`).join("");
+  $("#cap").textContent = label;
+}
+function parseCsv(text) {
+  const [head, ...lines] = text.trim().split(/\r?\n/), cols = head.split(",");
+  return lines.map(l => Object.fromEntries(l.split(",").map((v, i) => [cols[i], Number(v)])));
+}
+async function poll(base) {
+  try {
+    const [st, m, top] = await Promise.all([fetch(base + "/api/status").then(r => r.json()),
+      fetch(base + "/api/metrics?from=1&to=100000000").then(r => r.json()), fetch(base + "/api/accounts/top?n=8").then(r => r.json())]);
+    const grew = m.rows.length !== rows.length;
+    if (grew) show({ status: st, rows: m.rows, top: top.accounts }, `Live from ${base}: ${st.chain_id}, block ${st.height}. Refreshing every five seconds.`);
+    $("#live").classList.add("on"); $("#liveText").textContent = `live · block ${st.height}`;
+  } catch (e) {
+    $("#live").classList.remove("on"); $("#liveText").textContent = "cannot reach the API";
+    $("#cap").innerHTML = `Could not reach <code>${base.replace(/</g, "&lt;")}</code>. Start it with <code>jurisledger api ledger.db</code>; if this page is on GitHub Pages, your browser may ask to allow access to a local address.`;
+  }
+}
+$("#connect").onclick = () => { clearInterval(timer); rows = []; const base = $("#apiUrl").value.replace(/\/$/, ""); poll(base); timer = setInterval(() => poll(base), 5000); };
+$("#sample").onclick = () => { clearInterval(timer); $("#live").classList.remove("on"); $("#liveText").textContent = "sample"; show(window.JURIS_METRICS, "The sample: a simulated economy over ten periods, 60 blocks and 1,908 transactions, run on the two-phase network with random delays and one of four validators offline, then indexed."); };
+$("#csv").onchange = async e => { const f = e.target.files[0]; if (!f) return; clearInterval(timer); show({ rows: parseCsv(await f.text()) }, `From ${f.name}.`); };
+if (window.JURIS_METRICS) $("#sample").click();
+})();
+</script>
+</body>
+</html>

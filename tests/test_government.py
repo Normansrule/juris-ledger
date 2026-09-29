@@ -117,7 +117,7 @@ def test_explainer_site_is_self_contained_and_covers_every_step():
     from pathlib import Path
     site = Path(__file__).resolve().parent.parent / "site"
     text = (site / "index.html").read_text()
-    for page in ("index.html", "explorer.html", "style.css", "verify.js", "ledger3d.js"):
+    for page in ("index.html", "explorer.html", "dashboard.html", "style.css", "verify.js", "ledger3d.js"):
         body = (site / page).read_text()
         assert not re.search(r'(src|href)="https?://[^"]*\.(js|css)', body) and "@import" not in body, page
     assert 'href="style.css"' in text and 'src="ledger3d.js"' in (site / "explorer.html").read_text()
@@ -139,3 +139,14 @@ def test_register_embeds_verifiable_evidence_for_every_contract(demo):
     for b in blobs:
         report = legal.verify_evidence_bundle(json.loads(b), vals)
         assert report["valid"] and report["fully_signed"]
+
+
+
+def test_dashboard_sample_metrics_are_consistent():
+    from pathlib import Path
+    text = (Path(__file__).resolve().parent.parent / "site" / "sample-metrics.js").read_text()
+    data = json.loads(text[text.index("=") + 1:].rstrip().rstrip(";"))
+    rows = data["rows"]
+    assert [r["height"] for r in rows] == list(range(1, len(rows) + 1))
+    assert sum(r["n_tx"] for r in rows) == data["status"]["transactions"]
+    assert any(r["commit_round"] > 0 for r in rows)          # the offline validator shows up as extra rounds
