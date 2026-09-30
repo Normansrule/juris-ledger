@@ -4,6 +4,7 @@
   <a href="https://normansrule.github.io/juris-ledger/"><b>▶ Open the interactive explainer</b></a> — nine animated, step-by-step simulations you can drive yourself
   &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/explorer.html"><b>Explore a whole ledger</b></a>
   &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/dashboard.html"><b>Dashboard</b></a>
+  &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/wallet.html"><b>Wallet</b></a>
   &nbsp;·&nbsp; <a href="#quick-start">Quick start</a> &nbsp;·&nbsp; <a href="#who-can-attack-it-and-how-far-they-get">Threats</a> &nbsp;·&nbsp; <a href="docs/GOVERNMENT.md">Public-sector blueprint</a>
 </p>
 
@@ -140,7 +141,7 @@ jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
 jurisledger all                    # run all eleven experiments (101 claims)
-python -m pytest                   # 157 tests; every printed claim is also asserted
+python -m pytest                   # 160 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -149,6 +150,7 @@ The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed2
 
 | You are | You run | You get |
 |---|---|---|
+| Anyone who pays | open the [wallet](https://normansrule.github.io/juris-ledger/wallet.html), then `jurisledger submit` | Create or open a key in the browser, write a payment, sign it with nothing sent anywhere; carry the signed file to any validator. Signatures byte-identical to the Python ones; sealed key files open on both sides |
 | A clerk, journalist or citizen | open `register.html` | A browsable public register in the site's visual style: contracts and who opened them, obligations and their status, national accounts, review flags, validators — and a *Verify* button on every contract that checks it in the browser. One self-contained file, no server, nothing fetched from the internet |
 | Anyone with a ledger export | open the [explorer](https://normansrule.github.io/juris-ledger/explorer.html) and drop `chain.json` | Every block's links, Merkle root, signatures and certificate checked in the browser as the chain animates in; blocks, transactions in plain sentences, one account followed across blocks, GDP up to any block, the four fraud detectors with ring diagrams, and a **3D view**: the chain as a tower of blocks with validators orbiting it, and money flowing between every account |
 | A lawyer, arbitrator or auditor | `jurisledger verify evidence.json validators.json`, or drop the file on the explainer's step 8 — nothing is uploaded | A plain-language verdict on one contract — who signed, what was paid and when, what the arbitrator decided — checked offline against validator keys *you* supply. Exit code 0 or 1, so it scripts |
@@ -377,6 +379,7 @@ site/verify.js     evidence verifier, ledger audit, GDP and fraud detectors in J
 site/style.css     the shared visual system
 site/ledger3d.js   dependency-free 3D views of the chain and of money flows
 site/dashboard.html operations and statistics dashboard (live API, metrics.csv, or sample)
+site/wallet.html   browser wallet: keys, offline signing, sealed key files (site/wallet.js)
 assets/banner.svg  animated README banner
   contracts.py     wallet helpers, contract vault, audit trail, provenance tree
   legal.py         obligations, compliance, dispute records, offline-verifiable evidence files
@@ -390,7 +393,7 @@ assets/banner.svg  animated README banner
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
   experiments.py   the eleven experiments; every claim is a checked boolean
-tests/             157 tests
+tests/             160 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```

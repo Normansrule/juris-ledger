@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>JurisLedger wallet — sign in your browser, carry it anywhere</title>
+<meta name="description" content="Create a key, write a payment, sign it in your browser. The key never leaves the page; the signed transaction is a file any validator accepts.">
+<link rel="stylesheet" href="style.css">
+<style>
+.steps3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:1rem;margin-top:1.4rem}
+.card3{background:var(--sheet);border:1px solid var(--rule);border-radius:14px;padding:1.2rem;display:flex;flex-direction:column;gap:.6rem}
+.card3 h2{font-size:1.35rem;margin:0}
+.card3 .n{font-family:var(--serif);font-size:2.2rem;color:var(--rule);line-height:1}
+.card3 label{font-size:.9rem;color:var(--ink-2);display:block}
+.card3 input,.card3 select{font:inherit;width:100%;padding:.5rem .6rem;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--ink);margin-top:.2rem}
+.who{display:flex;gap:.8rem;align-items:center;min-height:4.2rem}
+.who code{word-break:break-all;font-size:.78rem}
+.env{position:relative;height:150px;margin:.4rem 0}
+.env svg{width:100%;height:100%}
+[hidden]{display:none!important}
+.flap{transform-box:fill-box;transform-origin:50% 0;transform:scaleY(-1);transition:transform .7s cubic-bezier(.2,.8,.2,1)}
+.sealed .flap{transform:scaleY(1)}
+.letter{transition:transform .6s cubic-bezier(.2,.8,.2,1)}
+.sealed .letter{transform:translateY(60px)}
+.wax{opacity:0;transform:scale(2.2) rotate(-25deg);transform-origin:center;transform-box:fill-box;transition:opacity .3s .6s,transform .5s .6s cubic-bezier(.2,1.4,.4,1)}
+.sealed .wax{opacity:1;transform:scale(1) rotate(-12deg)}
+pre.tx{background:var(--wash);border-radius:8px;padding:.7rem;font-size:.75rem;max-height:14rem;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0}
+.warn{font-size:.85rem;color:var(--amber)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="index.html">JurisLedger</a>
+  <nav class="folios" aria-label="Site"><a href="index.html">How it works</a><a href="explorer.html">Explore a ledger</a><a href="dashboard.html">Dashboard</a><a href="wallet.html" aria-current="page"><strong>Wallet</strong></a></nav>
+</div></header>
+<main class="wrap" style="padding:2.5rem 0 4rem">
+  <h1 style="font-size:clamp(2rem,5vw,3.2rem)">Sign in your browser. Carry it anywhere.</h1>
+  <p style="font-size:1.1rem;color:var(--ink-2);max-width:70ch">Your key is made and kept in this page by the browser's own cryptography. Nothing is uploaded: a signed transaction is a small file you hand to any validator, from any machine, even one that has never seen your key. That separation — signing offline, submitting online — is how high-value systems keep keys away from networks.</p>
+
+  <div class="steps3">
+    <section class="card3" aria-labelledby="k1">
+      <div class="n">1</div><h2 id="k1">Your key</h2>
+      <div class="controls" style="margin:0"><button class="btn" id="newKey">Create a new key</button>
+        <label class="btn ghost" style="cursor:pointer;margin:0;color:var(--ink)">Open a key file<input type="file" id="keyFile" accept=".json" hidden></label></div>
+      <label id="openPassRow" hidden>Passphrase for this key file<input type="password" id="openPass" autocomplete="current-password"></label>
+      <div class="who" id="who"><span style="color:var(--ink-2)">No key loaded.</span></div>
+      <label>Seal and save it (passphrase, 8 characters or more)<input type="password" id="sealPass" autocomplete="new-password" disabled></label>
+      <button class="btn ghost" id="saveKey" disabled>Download sealed key file</button>
+      <p class="warn">Lose the key file or the passphrase and the account cannot sign again (lost-key recovery through two issuers exists for exactly that).</p>
+    </section>
+
+    <section class="card3" aria-labelledby="k2">
+      <div class="n">2</div><h2 id="k2">The payment</h2>
+      <label>Ledger API (optional, fills in the rest)<input id="api" value="http://127.0.0.1:8080" spellcheck="false"></label>
+      <button class="btn ghost" id="lookup" disabled>Look up my account</button>
+      <label>Pay to (a name the API knows, or an address)<input id="to" spellcheck="false" placeholder="agriculture-firm-0 or 64 hex characters"></label>
+      <div class="row2"><label>Amount<input id="amount" inputmode="decimal" placeholder="12.50"></label>
+        <label>Purpose<select id="purpose"></select></label></div>
+      <div class="row2"><label>Ledger name<input id="chain" placeholder="demo-republic" spellcheck="false"></label>
+        <label>Transaction number<input id="nonce" inputmode="numeric" placeholder="0"></label></div>
+      <p class="caption" id="acctCap" style="min-height:0;margin:0;font-size:.88rem"></p>
+    </section>
+
+    <section class="card3" aria-labelledby="k3">
+      <div class="n">3</div><h2 id="k3">Sign and carry</h2>
+      <div class="env" id="env" aria-hidden="true"><svg viewBox="0 -62 300 180">
+        <g class="letter"><rect x="62" y="-40" width="176" height="96" rx="4" fill="var(--paper)" stroke="var(--rule)"/>
+          <rect x="76" y="-28" width="110" height="6" rx="3" fill="var(--rule)"/><rect x="76" y="-14" width="140" height="6" rx="3" fill="var(--rule)"/><rect x="76" y="0" width="90" height="6" rx="3" fill="var(--rule)"/></g>
+        <rect x="40" y="20" width="220" height="92" rx="8" fill="var(--wash)" stroke="var(--ink)" stroke-width="1.5"/>
+        <path d="M40 112 L150 60 L260 112" fill="none" stroke="var(--ink-2)" stroke-width="1.2"/>
+        <path class="flap" d="M40 20 L150 78 L260 20 Z" fill="var(--sheet)" stroke="var(--ink)" stroke-width="1.5"/>
+        <g class="wax"><circle cx="150" cy="72" r="17" fill="var(--seal)"/><text x="150" y="76" text-anchor="middle" font-size="9" fill="#fff" font-family="var(--serif)">SIGNED</text></g>
+      </svg></div>
+      <button class="btn" id="signBtn" disabled>Sign</button>
+      <div class="verdict" id="sigVerdict" style="font-size:1.2rem;margin:0"></div>
+      <pre class="tx" id="txOut" hidden></pre>
+      <div class="controls" style="margin:0"><button class="btn ghost" id="dlTx" disabled>Download signed transaction</button></div>
+      <p class="caption" id="howTo" style="min-height:0;font-size:.88rem;margin:0"></p>
+    </section>
+  </div>
+  <p style="font-size:.9rem;color:var(--ink-2);margin-top:1.4rem">Signatures made here are byte-for-byte identical to <code>jurisledger</code>'s (tested on every commit); sealed key files open on both sides. Research prototype: do not hold anything of value with it.</p>
+</main>
+<footer><div class="wrap">JurisLedger is a research prototype under the MIT licence.</div></footer>
+<script src="verify.js"></script>
+<script src="wallet.js"></script>
+<script>
+(async () => {
+const $ = s => document.querySelector(s), W = window.JurisWallet, V = window.JurisVerify;
+const PURPOSES = ["FINAL_CONSUMPTION", "INTERMEDIATE", "INVESTMENT", "GOVERNMENT_PURCHASE", "EXPORT", "WAGES", "TAX", "TRANSFER", "FINANCIAL"];
+$("#purpose").innerHTML = PURPOSES.map(p => `<option value="${p}">${p.toLowerCase().replace(/_/g, " ")}</option>`).join("");
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let key = null, pendingFile = null, signed = null;
+if (!(await V.supported())) { $("#who").innerHTML = '<span class="bad">This browser has no Ed25519 in its Web Cryptography API. Use a current Chrome, Edge, Firefox or Safari, or the command-line wallet.</span>'; return; }
+
+function showKey() {
+  $("#who").innerHTML = `${W.identicon(key.address)}<div><strong>Key loaded</strong><br><code>${key.address}</code></div>`;
+  ["#sealPass", "#saveKey", "#lookup", "#signBtn"].forEach(s => $(s).disabled = false);
+  $("#env").classList.remove("sealed"); $("#txOut").hidden = true; $("#dlTx").disabled = true; $("#sigVerdict").textContent = "";
+}
+const download = (name, obj) => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 1)], { type: "application/json" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
+
+$("#newKey").onclick = async () => { key = await W.generate(); showKey(); $("#acctCap").textContent = "A new key has no account yet: register it (jurisledger wallet register) or ask an issuer to."; };
+$("#keyFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { pendingFile = JSON.parse(await f.text()); } catch { $("#who").innerHTML = '<span class="bad">That file is not JSON.</span>'; return; }
+  if (pendingFile.ciphertext) { $("#openPassRow").hidden = false; $("#openPass").focus(); $("#who").innerHTML = "<span>Sealed key file: type its passphrase and press Enter.</span>"; }
+  else { try { key = await W.open(pendingFile); showKey(); } catch (err) { $("#who").innerHTML = `<span class="bad">${esc(err.message)}</span>`; } }
+};
+$("#openPass").onkeydown = async e => {
+  if (e.key !== "Enter") return;
+  $("#who").innerHTML = "<span>Deriving the key (600,000 rounds of PBKDF2)…</span>";
+  try { key = await W.open(pendingFile, $("#openPass").value); $("#openPass").value = ""; $("#openPassRow").hidden = true; showKey(); }
+  catch (err) { $("#who").innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+};
+$("#saveKey").onclick = async () => {
+  try { const ks = await W.seal(key, $("#sealPass").value); $("#sealPass").value = ""; download(`key-${key.address.slice(0, 8)}.json`, ks); }
+  catch (err) { alert(err.message); }
+};
+$("#lookup").onclick = async () => {
+  const base = $("#api").value.replace(/\/$/, "");
+  try {
+    const a = await fetch(`${base}/api/account/${key.address}`).then(r => r.ok ? r.json() : Promise.reject(r.status));
+    $("#chain").value = a.chain_id; $("#nonce").value = a.next_nonce;
+    $("#acctCap").innerHTML = `<strong>${esc(a.name)}</strong> (${esc(a.role)}${a.sector ? ", " + esc(a.sector) : ""}). Next transaction number ${a.next_nonce}.`;
+  } catch (e) {
+    try { const st = await fetch(`${base}/api/status`).then(r => r.json()); $("#chain").value = st.chain_id; $("#nonce").value = 0;
+      $("#acctCap").textContent = "This key is not on the ledger yet (number 0 is its registration)."; }
+    catch { $("#acctCap").innerHTML = `Could not reach <code>${esc(base)}</code>. Fill in the ledger name and transaction number yourself, or start <code>jurisledger api ledger.db</code>.`; }
+  }
+};
+$("#signBtn").onclick = async () => {
+  const cents = Math.round(parseFloat($("#amount").value) * 100), nonce = parseInt($("#nonce").value, 10), chain = $("#chain").value.trim();
+  let to = $("#to").value.trim();
+  if (!(cents > 0)) return void ($("#sigVerdict").innerHTML = '<span class="bad">Enter an amount above zero.</span>');
+  if (!(nonce >= 0) || !chain) return void ($("#sigVerdict").innerHTML = '<span class="bad">Fill in the ledger name and transaction number (or look up the account).</span>');
+  if (!/^[0-9a-f]{64}$/.test(to)) {
+    try { const a = await fetch(`${$("#api").value.replace(/\/$/, "")}/api/account/${encodeURIComponent(to)}`).then(r => r.ok ? r.json() : Promise.reject());
+      to = a.address; $("#to").value = to; }
+    catch { return void ($("#sigVerdict").innerHTML = '<span class="bad">Give the recipient as a 64-character address, or connect to an API that knows the name.</span>'); }
+  }
+  signed = await W.sign(key, chain, "PAYMENT", nonce, { to, amount: cents, purpose: $("#purpose").value });
+  const ok = await V.verifyTx(signed), id = await V.txid(signed);
+  $("#env").classList.remove("sealed"); void $("#env").offsetWidth; $("#env").classList.add("sealed");
+  $("#sigVerdict").innerHTML = ok ? `<span class="good">Signed and self-checked</span>` : '<span class="bad">Signature check failed</span>';
+  $("#txOut").hidden = false; $("#txOut").textContent = JSON.stringify(signed, null, 1); $("#dlTx").disabled = false;
+  $("#howTo").innerHTML = `Transaction <code>${id.slice(0, 16)}…</code>. Carry the file to any machine with the ledger and run<br><code>jurisledger submit signed-${id.slice(0, 8)}.json HOST:PORT</code>. Change one character of it and every validator will refuse it.`;
+};
+$("#dlTx").onclick = async () => signed && download(`signed-${(await V.txid(signed)).slice(0, 8)}.json`, signed);
+})();
+</script>
+</body>
+</html>

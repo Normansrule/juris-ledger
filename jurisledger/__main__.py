@@ -20,6 +20,7 @@
   jurisledger metrics ledger.db [-o metrics.csv]         per-block time series for dashboards
   jurisledger api ledger.db [--port 8080] [--follow HOST:PORT --every 10]
                                           read-only JSON API over the index (feeds site/dashboard.html)
+  jurisledger submit SIGNED_TX.json HOST:PORT [--pin ADDR]  send a transaction signed elsewhere (e.g. the web wallet)
   jurisledger status HOST:PORT            height, state digest and mempool of a running validator
   jurisledger export HOST:PORT [-o FILE]  download and re-audit a running validator's ledger
   jurisledger all | NAME                  run every experiment, or one of:
@@ -30,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 from .chain import Chain, InvalidBlock
@@ -261,6 +263,33 @@ def main(argv: list[str]) -> int:
         else:
             print("query what? gdp [FROM TO] | account NAME | top [N] | contract ID"); return 2
         return 0
+    if cmd == "submit" and len(args.paths) == 2:
+        from . import tx as T
+        from .net import Client
+        try:
+            tx = T.Transaction.from_dict(json.loads(Path(args.paths[0]).read_text()))
+        except (OSError, ValueError, KeyError, TypeError) as err:
+            print(f"not a signed transaction file: {err}"); return 2
+        if not tx.signature_valid():
+            print("REFUSED. The signature does not match the transaction: it was altered or signed with another key."); return 1
+        host, port = args.paths[1].rsplit(":", 1)
+        client = Client(host, int(port), expect_address=args.pin)
+        try:
+            before = client.account(tx.sender)
+            if not before.get("found"):
+                print("REFUSED. The sender is not registered on this ledger."); return 1
+            if before["nonce"] != tx.nonce:
+                print(f"REFUSED. The account's next transaction number is {before['nonce']}, this one is numbered {tx.nonce}. "
+                      "Sign it again with the right number."); return 1
+            client.submit(tx)
+            print(f"sent {tx.kind.lower()} {tx.txid[:16]}…; waiting for finality")
+            for _ in range(60):
+                time.sleep(0.5)
+                if client.account(tx.sender).get("nonce", 0) > tx.nonce:
+                    print(f"FINAL. Transaction {tx.txid} is in a block."); return 0
+        except OSError as err:
+            print(f"could not reach {args.paths[1]}: {err}"); return 1
+        print("not finalised within 30 s: the validators may have rejected it (check balance, purpose and policy)"); return 1
     if cmd == "api" and len(args.paths) == 1:
         from .api import serve
         try:

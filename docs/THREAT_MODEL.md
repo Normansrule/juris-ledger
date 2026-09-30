@@ -51,6 +51,8 @@
 
 | 25 | The statistics API is abused or used to change data | Read-only database connection and no write routes (405); bound parameters only; capped result sizes; per-client token-bucket rate limit (429); loopback by default; it serves only data the public ledger already publishes | Volumetric flooding at the network layer; put it behind a reverse proxy for public exposure |
 
+| 26 | A networked machine holding keys is compromised | Offline signing: the browser wallet signs with nothing sent anywhere and the signed transaction travels as a file (`jurisledger submit`); a changed byte fails the signature, a replayed file fails the transaction number; browser-sealed keys use PBKDF2-HMAC-SHA256 at 600,000 iterations and every key file's cost parameters are bounded, so a crafted file cannot make opening it hang | A compromised browser or operating system on the signing machine |
+
 ## Known gaps
 
 - **Transport.** Connections are TLS 1.3; a validator's certificate is self-signed by its own Ed25519 key and checked by pinning against the genesis, so no certificate authority is involved and a stolen hostname gains nothing. Peers prove key possession by signing a per-connection challenge inside the tunnel; only proven peers may send consensus or block-sync frames, and a peer may only relay under its own index. Inbound connections are capped at 256 and each source address may open at most 60 connections per 10 seconds. Still missing: any defence against volumetric flooding of the listener itself, which is a network-layer job.

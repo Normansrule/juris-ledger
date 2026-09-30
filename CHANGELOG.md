@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19.0 — the wallet, and signing away from the network
+- `site/wallet.html` and `site/wallet.js`: create or open a key in the browser (WebCrypto Ed25519), look up the account through the API, write a payment, sign it, and download the signed transaction; an envelope seals as you sign. Nothing leaves the page.
+- `jurisledger submit SIGNED.json HOST:PORT`: send a transaction signed elsewhere; refuses a broken signature before touching the network, refuses a wrong transaction number, and waits for finality. Tested live against a four-validator cluster, including a refused replay.
+- Keystores gain `pbkdf2-sha256` (600,000 iterations) beside scrypt so browsers can seal and open them; key-derivation cost parameters are bounded when opening. Browser signatures are byte-identical to Python's; sealed key files open on both sides (tested).
+- `/api/account/...` now returns the account's name, role and next transaction number.
+- 160 tests.
+
 ## 0.18.0 — live data: an API and a dashboard
 - `api.py` and `jurisledger api`: a read-only JSON API over the index (status, GDP by range, per-block metrics, top accounts, account history, contract timeline). SQLite read-only mode, GET only, bound parameters, capped results, per-client token-bucket rate limiting, loopback by default, private-network preflight so the public site can read a local API. `--follow HOST:PORT` keeps indexing a live validator over pinned TLS.
 - `site/dashboard.html`: KPIs and four hand-drawn animated charts with hover details — activity, where the money went (imports below the line), GDP accumulating, and consensus health — fed live by the API, by `metrics.csv`, or by a bundled 60-block sample run on the two-phase network with one validator offline (its turns show as extra rounds).

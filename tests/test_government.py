@@ -117,7 +117,7 @@ def test_explainer_site_is_self_contained_and_covers_every_step():
     from pathlib import Path
     site = Path(__file__).resolve().parent.parent / "site"
     text = (site / "index.html").read_text()
-    for page in ("index.html", "explorer.html", "dashboard.html", "style.css", "verify.js", "ledger3d.js"):
+    for page in ("index.html", "explorer.html", "dashboard.html", "wallet.html", "style.css", "verify.js", "ledger3d.js", "wallet.js"):
         body = (site / page).read_text()
         assert not re.search(r'(src|href)="https?://[^"]*\.(js|css)', body) and "@import" not in body, page
     assert 'href="style.css"' in text and 'src="ledger3d.js"' in (site / "explorer.html").read_text()

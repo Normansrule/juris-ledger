@@ -68,3 +68,22 @@ def test_quota_can_be_set_by_validator_vote():
     vw = [Wallet(k, m.chain_id) for k in m.vkeys]
     m.send(*[v.make(T.VALIDATOR_VOTE, {"action": "SET_POLICY", "target": "max_tx_per_block", "value": 2}) for v in vw[:3]])
     assert m.chain.state.policy["max_tx_per_block"] == 2
+
+
+
+def test_submit_refuses_an_altered_transaction_before_touching_the_network(tmp_path, capsys):
+    from jurisledger.__main__ import main
+    from jurisledger import tx as T
+    k = KeyPair.generate()
+    t = T.Transaction.create("demo", "PAYMENT", k, 0, {"to": "ab" * 32, "amount": 5, "purpose": "FINAL_CONSUMPTION"})
+    d = t.to_dict(); d["payload"]["amount"] = 5000
+    (tmp_path / "t.json").write_text(json.dumps(d))
+    assert main(["jurisledger", "submit", str(tmp_path / "t.json"), "127.0.0.1:1"]) == 1
+    assert "signature does not match" in capsys.readouterr().out
+
+
+def test_keystore_cost_parameters_are_bounded():
+    k = KeyPair.generate()
+    weak = seal(k, "correct horse battery"); weak["n"] = 2
+    with pytest.raises(KeystoreError, match="outside the accepted range"):
+        open_sealed(weak, "correct horse battery")

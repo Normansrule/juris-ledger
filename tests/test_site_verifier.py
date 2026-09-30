@@ -140,3 +140,24 @@ def test_browser_fraud_flags_match_python_on_all_four_detectors(tmp_path):
 
     assert sorted(map(key, js)) == sorted(map(key, py))
     assert {f["detector"] for f in js} == {"circular_flow", "structuring", "benford", "duplicate_invoice_financing"}
+
+
+@needs_node
+def test_browser_wallet_signs_byte_identically_and_keystores_cross_open(tmp_path):
+    from jurisledger import keystore
+    from jurisledger import tx as T
+    from jurisledger.crypto import KeyPair
+    k = KeyPair.from_seed("wallet-test")
+    payload = {"to": "ab" * 32, "amount": 1250, "purpose": "FINAL_CONSUMPTION", "note": "café ☕ <b>"}
+    run = lambda *a: subprocess.run([NODE, str(ROOT / "tests/js/wallet_cli.mjs"), *a], capture_output=True, text=True, check=True).stdout
+    js = T.Transaction.from_dict(json.loads(run("sign", k.secret_hex(), "demo-republic", "PAYMENT", "7", json.dumps(payload))))
+    py = T.Transaction.create("demo-republic", "PAYMENT", k, 7, payload)
+    assert js.signature_valid() and js.signature == py.signature and js.txid == py.txid
+    sealed_in_browser = json.loads(run("seal", k.secret_hex(), "browser passphrase"))
+    assert sealed_in_browser["kdf"] == "pbkdf2-sha256" and k.secret_hex() not in json.dumps(sealed_in_browser)
+    assert keystore.open_sealed(sealed_in_browser, "browser passphrase").address == k.address
+    with pytest.raises(keystore.KeystoreError):
+        keystore.open_sealed(sealed_in_browser, "wrong passphrase")
+    f = tmp_path / "py.json"
+    f.write_text(json.dumps(keystore.seal(k, "python passphrase", "pbkdf2-sha256")))
+    assert json.loads(run("open", str(f), "python passphrase"))["address"] == k.address

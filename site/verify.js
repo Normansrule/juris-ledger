@@ -313,5 +313,7 @@
     return [...structuring(exported, threshold), ...circularFlows(exported), ...benford(exported), ...duplicatePledges(exported)];
   }
 
-  root.JurisVerify = { canonical, txid, headerHash, verifyBundle, auditChain, merkleRoot, accountsOf, expenditure, reviewFlags, circularFlows, structuring, benford, duplicatePledges, supported, sha256hex, quorum };
+  async function verifyTx(t) { return edVerify(t.sender, txSigningBytes(t), t.signature); }
+
+  root.JurisVerify = { canonical, txSigningBytes, verifyTx, bytesToHex, hexToBytes, txid, headerHash, verifyBundle, auditChain, merkleRoot, accountsOf, expenditure, reviewFlags, circularFlows, structuring, benford, duplicatePledges, supported, sha256hex, quorum };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -112,7 +112,10 @@ def make_handler(db_path: Path, limiter: RateLimiter, cors: str) -> type:
         a = i.resolve(who)
         if not a:
             raise LookupError(f"no account named or addressed {who!r}")
-        return {"address": a, "payments": i.account_history(a, 200)}
+        info = i.db.execute("SELECT name, role, sector, successor FROM accounts WHERE address=?", (a,)).fetchone()
+        sent = i.db.execute("SELECT COUNT(*) FROM txs WHERE sender=?", (a,)).fetchone()[0]
+        return {"address": a, "name": info[0], "role": info[1], "sector": info[2], "successor": info[3],
+                "next_nonce": sent, "chain_id": i.meta("chain_id"), "payments": i.account_history(a, 200)}
 
     def contract(_q, cid):
         events = idx().contract_timeline(cid)
