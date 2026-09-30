@@ -141,7 +141,7 @@ jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
 jurisledger all                    # run all eleven experiments (101 claims)
-python -m pytest                   # 160 tests; every printed claim is also asserted
+python -m pytest                   # 162 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -373,6 +373,7 @@ jurisledger/
   keystore.py      key files sealed with a passphrase (scrypt + AES-256-GCM)
   index.py         incremental SQLite index: queries and per-block metrics
   api.py           read-only, rate-limited JSON API over the index; can follow a live validator
+  doctor.py        `jurisledger doctor`: checks the machine's Python, packages, Node and key-file permissions
 site/index.html    the interactive explainer (deployed to GitHub Pages by .github/workflows/pages.yml)
 site/explorer.html browser ledger explorer: structural audit, blocks, transactions, accounts, GDP
 site/verify.js     evidence verifier, ledger audit, GDP and fraud detectors in JavaScript (WebCrypto), tested against the Python ones
@@ -393,7 +394,7 @@ assets/banner.svg  animated README banner
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
   experiments.py   the eleven experiments; every claim is a checked boolean
-tests/             160 tests
+tests/             162 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```
@@ -402,6 +403,7 @@ examples/          quickstart.py
 
 | Document | Contents |
 |---|---|
+| [`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md) | WCAG 2.1 AA: the automated audit of every page (0 problems), what it fixed, what it cannot check |
 | [`docs/DATA.md`](docs/DATA.md) | The SQLite index: commands, tables, why it can be trusted, measured speed |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | Running validators on separate machines: `jurisledger init`, per-machine folders, operations, a two-machine exercise |
 | [`docs/GOVERNMENT.md`](docs/GOVERNMENT.md) | Blueprint for public-sector use: who validates, who issues identity, phased rollout, capacity, what must exist outside the code |

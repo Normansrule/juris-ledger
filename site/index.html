@@ -188,7 +188,7 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
         <div id="dTable"></div>
         <div class="caption" id="dCap"></div>
       </div>
-      <div id="dAward" style="opacity:.45;pointer-events:none">
+      <div id="dAward" class="inactive" inert>
         <h3>The arbitrator's award <span class="status" id="dAwardState">no open dispute</span></h3>
         <label>Amount owed for <span id="dAwardOb">—</span>: <strong id="dAmtLabel">—</strong><input type="range" id="dAmt" min="1" max="500" value="500"></label>
         <label>Due at block: <strong id="dDueLabel">—</strong><input type="range" id="dDue" min="1" max="30" value="6"></label>
@@ -493,7 +493,7 @@ const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++)
     $("#dOpen").disabled = !overdue || !!(dispute && !decided);
     $("#dPay").disabled = !obs.some(o => o.paidAt === null && !o.waived && status(o) !== "DISPUTED");
     const panel = $("#dAward"), open = dispute && !decided;
-    panel.style.opacity = open ? 1 : .45; panel.style.pointerEvents = open ? "auto" : "none";
+    panel.inert = !open; panel.classList.toggle("inactive", !open);
     $("#dAwardState").textContent = open ? "dispute open" : decided ? "decided — cannot be changed" : "no open dispute";
     $("#dAwardState").className = "status " + (open ? "warn" : decided ? "good" : "");
     if (open) { const o = obs.find(x => x.id === dispute.id); $("#dAwardOb").textContent = o.id; }

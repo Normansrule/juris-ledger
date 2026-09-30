@@ -54,12 +54,12 @@ table.top td.n,table.top th.n{text-align:right}
   <div class="kpis" id="kpis"></div>
 
   <div class="charts">
-    <section class="chart"><h2>Activity</h2><p>Transactions per block (bars) and public payments (line).</p><canvas id="cTx"></canvas></section>
+    <section class="chart"><h2>Activity</h2><p>Transactions per block (bars) and public payments (line).</p><canvas id="cTx" role="img" aria-label="chart"></canvas></section>
     <section class="chart"><h2>Where the money went</h2><p>Spending per block by kind; imports drawn below the line because they subtract from GDP.</p>
       <div class="legend"><span style="--c:#127C6E">households (C)</span><span style="--c:#0F1F3D">investment (I)</span><span style="--c:#B4720C">government (G)</span><span style="--c:#6B7FA8">exports (X)</span><span style="--c:#B8302F">imports (M)</span></div>
-      <canvas id="cMix"></canvas></section>
-    <section class="chart"><h2>GDP, accumulating</h2><p>C + I + G + X − M summed from block 1, exactly as <code>jurisledger query gdp</code> computes it.</p><canvas id="cGdp"></canvas></section>
-    <section class="chart"><h2>Consensus health</h2><p>Validator signatures on each block (bars) and extra voting rounds needed (dots). Rounds above zero mean a proposer was slow or the network was delayed.</p><canvas id="cHealth"></canvas></section>
+      <canvas id="cMix" role="img" aria-label="chart"></canvas></section>
+    <section class="chart"><h2>GDP, accumulating</h2><p>C + I + G + X − M summed from block 1, exactly as <code>jurisledger query gdp</code> computes it.</p><canvas id="cGdp" role="img" aria-label="chart"></canvas></section>
+    <section class="chart"><h2>Consensus health</h2><p>Validator signatures on each block (bars) and extra voting rounds needed (dots). Rounds above zero mean a proposer was slow or the network was delayed.</p><canvas id="cHealth" role="img" aria-label="chart"></canvas></section>
   </div>
 
   <section class="chart" style="margin-top:1rem"><h2>Busiest accounts</h2><p>By public money paid plus received.</p><table class="top" id="top"></table></section>
@@ -159,8 +159,19 @@ function build() {
   charts.forEach(c => c.replay());
 }
 
+function describe() {                      // text for screen readers: the charts are pictures of these numbers
+  if (!rows.length) return;
+  const tx = rows.reduce((s, r) => s + r.n_tx, 0), g = rows.reduce((s, r) => s + r.c + r.i + r.g + r.x - r.m, 0);
+  const busiest = rows.reduce((a, r) => r.n_tx > a.n_tx ? r : a, rows[0]), slow = rows.filter(r => r.commit_round > 0).length;
+  const sums = { households: 0, investment: 0, government: 0, exports: 0, imports: 0 };
+  rows.forEach(r => { sums.households += r.c; sums.investment += r.i; sums.government += r.g; sums.exports += r.x; sums.imports += r.m; });
+  $("#cTx").setAttribute("aria-label", `Transactions per block over ${rows.length} blocks, ${tx} in total; the busiest was block ${busiest.height} with ${busiest.n_tx}.`);
+  $("#cMix").setAttribute("aria-label", "Spending by kind: " + Object.entries(sums).map(([k, v]) => `${k} ${money(v)}`).join(", ") + ".");
+  $("#cGdp").setAttribute("aria-label", `GDP accumulating from 0 to ${money(g)} over ${rows.length} blocks.`);
+  $("#cHealth").setAttribute("aria-label", `Validator signatures per block; ${slow} of ${rows.length} blocks needed extra voting rounds.`);
+}
 function show(data, label) {
-  rows = data.rows || []; kpis(data.status || {}, rows); build();
+  rows = data.rows || []; kpis(data.status || {}, rows); build(); describe();
   $("#top").innerHTML = "<tr><th>account</th><th>role</th><th class='n'>paid</th><th class='n'>received</th></tr>" +
     (data.top || []).map(a => `<tr><td>${String(a.name).replace(/</g, "&lt;")}</td><td>${a.role}</td><td class="n">${money(a.paid)}</td><td class="n">${money(a.received)}</td></tr>`).join("");
   $("#cap").textContent = label;

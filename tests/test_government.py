@@ -150,3 +150,24 @@ def test_dashboard_sample_metrics_are_consistent():
     assert [r["height"] for r in rows] == list(range(1, len(rows) + 1))
     assert sum(r["n_tx"] for r in rows) == data["status"]["transactions"]
     assert any(r["commit_round"] > 0 for r in rows)          # the offline validator shows up as extra rounds
+
+
+def test_doctor_runs_and_flags_stacked_environments(monkeypatch, capsys):
+    from jurisledger import doctor
+    monkeypatch.setenv("VIRTUAL_ENV", "/tmp/some-venv")
+    monkeypatch.setenv("CONDA_PREFIX", "/tmp/some-conda")
+    levels = {lvl for lvl, what, fix in doctor.checks() if "two environments" in what}
+    assert levels == {"WARN"}
+    assert doctor.run() in (0, 1)
+    assert "deactivate" in capsys.readouterr().out
+
+
+def test_site_accessibility_basics():
+    from pathlib import Path
+    site = Path(__file__).resolve().parent.parent / "site"
+    explorer, dash = (site / "explorer.html").read_text(), (site / "dashboard.html").read_text()
+    assert 'role="tab"' in explorer and "aria-pressed" not in explorer
+    assert dash.count('role="img"') == 4
+    for page in ("index.html", "explorer.html", "dashboard.html", "wallet.html"):
+        html = (site / page).read_text()
+        assert '<html lang="en">' in html and "prefers-reduced-motion" in (site / "style.css").read_text()

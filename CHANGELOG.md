@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.20.0 — accessible to everyone, and a doctor for the machine
+- Accessibility: every site page and the generated public register audited against WCAG 2.1 A and AA with axe-core in light and dark mode (`tools/a11y_audit.py`); the 36 problems found were fixed (contrast, an inert panel instead of a faded one, proper tab roles) and the audit now reports 0. Dashboard charts carry spoken summaries rebuilt from the data. `docs/ACCESSIBILITY.md`.
+- `jurisledger doctor` (also `python -m jurisledger.doctor`, which works even when packages are missing): checks Python, `cryptography`, `pytest`, Node, TLS 1.3, local ports and key-file permissions, and warns when two environments are active at once or when the `jurisledger` command and the tests use different Pythons.
+- 162 tests.
+
 ## 0.19.0 — the wallet, and signing away from the network
 - `site/wallet.html` and `site/wallet.js`: create or open a key in the browser (WebCrypto Ed25519), look up the account through the API, write a payment, sign it, and download the signed transaction; an envelope seals as you sign. Nothing leaves the page.
 - `jurisledger submit SIGNED.json HOST:PORT`: send a transaction signed elsewhere; refuses a broken signature before touching the network, refuses a wrong transaction number, and waits for finality. Tested live against a four-validator cluster, including a refused replay.

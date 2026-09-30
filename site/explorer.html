@@ -52,7 +52,7 @@ select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8p
 .flag p{font-size:.88rem;margin:.2rem 0;color:var(--ink-2)}
 .tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem}
 .tabs button{font:inherit;font-size:.9rem;padding:.4rem .9rem;border-radius:999px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);cursor:pointer}
-.tabs button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 #c3d{width:100%;height:480px;display:block;border-radius:10px;background:radial-gradient(ellipse at 50% 40%,var(--sheet),var(--paper));touch-action:none}
 .note{font-size:.88rem;color:var(--ink-2);margin-top:1rem}
 .empty{color:var(--ink-2);padding:2rem 0}
@@ -93,10 +93,10 @@ select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8p
 
   <section class="panel" id="view3d" hidden style="margin-top:1rem">
     <div class="tabs" role="tablist" aria-label="3D view">
-      <button data-m="chain" aria-pressed="true">The chain in 3D</button>
-      <button data-m="flows" aria-pressed="false">Money flows</button>
-      <span style="margin-left:auto;font-size:.85rem;color:var(--ink-2);align-self:center">drag to turn · scroll to zoom · click a block</span>
+      <button role="tab" data-m="chain" aria-selected="true" aria-controls="c3d">The chain in 3D</button>
+      <button role="tab" data-m="flows" aria-selected="false" aria-controls="c3d">Money flows</button>
     </div>
+    <p style="font-size:.85rem;color:var(--ink-2);margin:-.2rem 0 .5rem">drag to turn · scroll to zoom · click a block</p>
     <canvas id="c3d" aria-label="Three-dimensional view of the ledger" role="img"></canvas>
     <p class="caption" id="cap3d" style="min-height:0;margin-top:.6rem">Each box is a block, sized by its transactions and linked to the one before. The four spheres are the validators; select a block and the amber lines show which of them signed it.</p>
   </section>
@@ -255,7 +255,7 @@ async function open(exported, label) {
   if (window.Ledger3D) {
     $("#view3d").hidden = false;
     view3d = Ledger3D.mount($("#c3d"), { results, chain, acc, onSelect: i => select(i) });
-    view3d.setMode(document.querySelector('#view3d .tabs button[aria-pressed="true"]').dataset.m);
+    view3d.setMode(document.querySelector('#view3d .tabs button[aria-selected="true"]').dataset.m);
   }
   select(results.length - 1);
   renderFlags();
@@ -310,7 +310,7 @@ function renderGdp() {
 }
 $("#txFilter").oninput = renderTxs;
 document.querySelectorAll("#view3d .tabs button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("#view3d .tabs button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  document.querySelectorAll("#view3d .tabs button").forEach(x => x.setAttribute("aria-selected", String(x === b)));
   if (view3d) view3d.setMode(b.dataset.m);
   $("#cap3d").textContent = b.dataset.m === "chain"
     ? "Each box is a block, sized by its transactions and linked to the one before. The four spheres are the validators; select a block and the amber lines show which of them signed it."

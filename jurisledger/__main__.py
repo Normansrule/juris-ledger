@@ -20,6 +20,7 @@
   jurisledger metrics ledger.db [-o metrics.csv]         per-block time series for dashboards
   jurisledger api ledger.db [--port 8080] [--follow HOST:PORT --every 10]
                                           read-only JSON API over the index (feeds site/dashboard.html)
+  jurisledger doctor                      check this machine's Python, packages, Node and network setup
   jurisledger submit SIGNED_TX.json HOST:PORT [--pin ADDR]  send a transaction signed elsewhere (e.g. the web wallet)
   jurisledger status HOST:PORT            height, state digest and mempool of a running validator
   jurisledger export HOST:PORT [-o FILE]  download and re-audit a running validator's ledger
@@ -263,6 +264,9 @@ def main(argv: list[str]) -> int:
         else:
             print("query what? gdp [FROM TO] | account NAME | top [N] | contract ID"); return 2
         return 0
+    if cmd == "doctor":
+        from .doctor import run as doctor
+        return doctor()
     if cmd == "submit" and len(args.paths) == 2:
         from . import tx as T
         from .net import Client
