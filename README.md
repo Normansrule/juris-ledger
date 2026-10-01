@@ -141,7 +141,7 @@ jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
 jurisledger all                    # run all eleven experiments (101 claims)
-python -m pytest                   # 162 tests; every printed claim is also asserted
+python -m pytest                   # 166 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -373,6 +373,7 @@ jurisledger/
   keystore.py      key files sealed with a passphrase (scrypt + AES-256-GCM)
   index.py         incremental SQLite index: queries and per-block metrics
   api.py           read-only, rate-limited JSON API over the index; can follow a live validator
+  fuzz.py          invariant fuzzing: random attacks, eight properties checked after every transaction
   doctor.py        `jurisledger doctor`: checks the machine's Python, packages, Node and key-file permissions
 site/index.html    the interactive explainer (deployed to GitHub Pages by .github/workflows/pages.yml)
 site/explorer.html browser ledger explorer: structural audit, blocks, transactions, accounts, GDP
@@ -394,7 +395,7 @@ assets/banner.svg  animated README banner
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
   experiments.py   the eleven experiments; every claim is a checked boolean
-tests/             162 tests
+tests/             166 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```

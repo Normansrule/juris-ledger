@@ -20,6 +20,7 @@
   jurisledger metrics ledger.db [-o metrics.csv]         per-block time series for dashboards
   jurisledger api ledger.db [--port 8080] [--follow HOST:PORT --every 10]
                                           read-only JSON API over the index (feeds site/dashboard.html)
+  jurisledger fuzz [--runs N --steps M --seed S]   random attacks on the state machine, eight invariants checked
   jurisledger doctor                      check this machine's Python, packages, Node and network setup
   jurisledger submit SIGNED_TX.json HOST:PORT [--pin ADDR]  send a transaction signed elsewhere (e.g. the web wallet)
   jurisledger status HOST:PORT            height, state digest and mempool of a running validator
@@ -131,6 +132,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--name"); ap.add_argument("--role", default="household"); ap.add_argument("--sector", default="")
     ap.add_argument("--pin", help="validator address to pin the TLS certificate to")
     ap.add_argument("--host", default="127.0.0.1"); ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--runs", type=int, default=20); ap.add_argument("--steps", type=int, default=400)
+    ap.add_argument("--seed", type=int)
     ap.add_argument("--follow"); ap.add_argument("--every", type=float, default=10.0)
     ap.add_argument("--encrypt", action="store_true", help="seal new key files with a passphrase (scrypt + AES-256-GCM)")
     ap.add_argument("--validators"); ap.add_argument("--issuers", default="")
@@ -263,6 +266,13 @@ def main(argv: list[str]) -> int:
                 print(f"  block {e['height']:>5}  {e['kind'].replace('_', ' ').lower():<18} {e['actor'] or '?':<24} {e['detail']}")
         else:
             print("query what? gdp [FROM TO] | account NAME | top [N] | contract ID"); return 2
+        return 0
+    if cmd == "fuzz":
+        from .fuzz import InvariantBroken, run as fuzz
+        try:
+            fuzz(runs=args.runs, steps=args.steps, seed=args.seed)
+        except InvariantBroken as err:
+            print(f"INVARIANT BROKEN. {err}"); return 1
         return 0
     if cmd == "doctor":
         from .doctor import run as doctor

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.21.0 — invariant fuzzing
+- `fuzz.py` and `jurisledger fuzz`: seeded random sequences of honest, malformed and hostile transactions against the state machine, with eight invariants checked after every one (conservation of money, no negative balances, atomic refusals, one-step transaction numbers, attacks always refused, contract activation, deterministic replay, snapshot round-trip). 150,000 transactions, no violation. Failures print the seed and step to replay exactly.
+- Two mutation tests plant bugs and require the fuzzer to catch them. Continuous integration now fuzzes 25,000 transactions on every commit.
+- 166 tests.
+
 ## 0.20.0 — accessible to everyone, and a doctor for the machine
 - Accessibility: every site page and the generated public register audited against WCAG 2.1 A and AA with axe-core in light and dark mode (`tools/a11y_audit.py`); the 36 problems found were fixed (contrast, an inert panel instead of a faded one, proper tab roles) and the audit now reports 0. Dashboard charts carry spoken summaries rebuilt from the data. `docs/ACCESSIBILITY.md`.
 - `jurisledger doctor` (also `python -m jurisledger.doctor`, which works even when packages are missing): checks Python, `cryptography`, `pytest`, Node, TLS 1.3, local ports and key-file permissions, and warns when two environments are active at once or when the `jurisledger` command and the tests use different Pythons.

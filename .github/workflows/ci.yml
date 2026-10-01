@@ -16,6 +16,8 @@ jobs:
           node-version: "22"
       - run: pip install -e ".[dev]"
       - run: python -m pytest -q
+      - name: invariant fuzzing (25,000 random transactions)
+        run: python -m jurisledger fuzz --runs 50 --steps 500
       - run: python -m jurisledger all
       - run: jurisledger cluster --out cluster
       - run: jurisledger demo --out demo && jurisledger audit demo/chain.json && jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
