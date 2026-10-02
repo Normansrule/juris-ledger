@@ -7,7 +7,7 @@
 | 2 (done in 0.7; pruning and state sync in 0.22) | Nodes as processes over TLS with pinned keys, authenticated peers, connection cap, durable stores, store locking, pruning to certified snapshots, joining by snapshot. Remaining: peer discovery | `jurisledger cluster` passes: four processes finalise, one is killed and rejoins from its store (done); the same across four machines with TLS (to do) |
 | 3 (framework done in 0.5) | Identity: attestations from several independent issuers, key rotation and recovery. Remaining: real credential formats, issuer liability rules | `identity` passes (done); a pilot issuer integrates a real credential check (to do) |
 | 4 (done in 0.8, heavy) | Confidential amounts with range proofs. Remaining: Bulletproofs, encrypted notes, hidden counterparties | `confidential` passes (done); proofs under 1 kB (to do) |
-| 5 | Threshold-encrypted contract vault | A host that leaks ciphertext leaks nothing |
+| 5 (done in 0.23) | Threshold-encrypted contract vault. Remaining: re-sharing when custodians change | `vault` passes: a host that leaks ciphertext leaks nothing, k-1 custodians learn nothing (done) |
 | 6 | Pilot on synthetic data from a real national-accounts framework (supply–use tables) | Published tables are reproduced from a generated ledger |
 | 7 | Legal and governance review with practitioners | Written opinions on evidentiary status and data-protection compatibility |
 

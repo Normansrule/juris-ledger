@@ -14,7 +14,7 @@
     <a href="explorer.html"><strong>Explore a ledger</strong></a>
     <a href="wallet.html">Wallet</a><a href="dashboard.html"><strong>Dashboard</strong></a>
     <a href="#final">1 A payment becomes final</a><a href="#attack">2 The network is attacked</a><a href="#contract">3 A contract is sealed</a>
-    <a href="#identity">4 Who is anyone</a><a href="#hidden">5 Hidden amounts</a><a href="#gdp">6 The economy, measured</a><a href="#fraud">7 Fraud, found</a><a href="#dispute">8 Settle a dispute</a><a href="#evidence">9 Prove it</a>
+    <a href="#identity">4 Who is anyone</a><a href="#hidden">5 Hidden amounts</a><a href="#gdp">6 The economy, measured</a><a href="#fraud">7 Fraud, found</a><a href="#dispute">8 Settle a dispute</a><a href="#evidence">9 Prove it</a><a href="#vault">10 Lock it away</a>
   </nav>
 </div></header>
 
@@ -233,12 +233,37 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
   </div>
 </section>
 
+<!-- 10 ----------------------------------------------------------------- -->
+<section class="folio" id="vault">
+  <div class="head"><div class="num">10</div><div><h2>Lock the text away from everyone</h2>
+  <p>A restricted contract's text is encrypted, and the key is split among five custodians so that any three can rebuild it and any two learn nothing. They release their pieces only to a reader whose VIEW is already on the ledger. Everything below is real cryptography running in this page: AES-256-GCM and Shamir secret sharing.</p></div></div>
+  <div class="stage" style="grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)">
+    <div>
+      <svg id="vSvg" viewBox="0 0 520 300" role="group" aria-label="Five custodians around a sealed contract; a reader on the right" style="font:12px var(--sans)"></svg>
+      <div class="controls">
+        <button class="btn" id="vReceipt">Record a VIEW receipt</button>
+        <button class="btn" id="vAsk">Ask the custodians</button>
+        <button class="btn ghost" id="vSteal">Steal the sealed file</button>
+        <button class="btn ghost" id="vCollude">Two custodians collude</button>
+        <button class="btn ghost" id="vReset">Start over</button>
+      </div>
+      <p style="font-size:.88rem;color:var(--ink-2);margin:.3rem 0 0">Click a custodian to take it offline, or to make it lie.</p>
+    </div>
+    <div>
+      <div class="verdict" id="vVerdict">Sealed</div>
+      <pre class="tx" id="vText" style="background:var(--wash);border-radius:8px;padding:.7rem;font-size:.8rem;white-space:pre-wrap;word-break:break-all;min-height:6rem;margin:.4rem 0"></pre>
+      <div class="caption" id="vCap"></div>
+      <p style="font-size:.9rem">In the repository: <code>jurisledger vault</code> checks eleven claims, including that a custodian handing back a forged piece is caught, and that one receipt buys exactly one read.</p>
+    </div>
+  </div>
+</section>
+
 <section class="folio">
   <div class="head"><div class="num" aria-hidden="true">&nbsp;</div><div><h2>Run every one of these yourself</h2>
   <p>Each claim on this page is a boolean in the test suite. Tested on Ubuntu with Python 3.10 or newer; the only dependency is the <code>cryptography</code> package.</p></div></div>
   <div class="commands">
 <span># get it</span><br>git clone https://github.com/Normansrule/juris-ledger.git &amp;&amp; cd juris-ledger<br>python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install -e ".[dev]"<br><br>
-<span># the steps above, as experiments with checked claims</span><br>jurisledger integration &nbsp;&nbsp;<span># 1</span><br>jurisledger asynchrony &nbsp;&nbsp;&nbsp;<span># 2</span><br>jurisledger contracts &nbsp;&nbsp;&nbsp;&nbsp;<span># 3</span><br>jurisledger identity &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 4</span><br>jurisledger confidential &nbsp;<span># 5</span><br>jurisledger gdp &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 6</span><br>jurisledger fraud &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 7</span><br>jurisledger disputes &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 8</span><br>jurisledger demo --out demo &amp;&amp; jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json &nbsp;<span># 9</span><br><br>
+<span># the steps above, as experiments with checked claims</span><br>jurisledger integration &nbsp;&nbsp;<span># 1</span><br>jurisledger asynchrony &nbsp;&nbsp;&nbsp;<span># 2</span><br>jurisledger contracts &nbsp;&nbsp;&nbsp;&nbsp;<span># 3</span><br>jurisledger identity &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 4</span><br>jurisledger confidential &nbsp;<span># 5</span><br>jurisledger gdp &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 6</span><br>jurisledger fraud &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 7</span><br>jurisledger disputes &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 8</span><br>jurisledger demo --out demo &amp;&amp; jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json &nbsp;<span># 9</span><br>jurisledger vault &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># 10</span><br><br>
 <span># then the real thing: four validator processes, one killed and revived</span><br>jurisledger cluster --out cluster
   </div>
 </section>
@@ -593,6 +618,100 @@ const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++)
     else if (t === "strangers") { $("#evVals").value = Array.from({ length: 4 }, (_, k) => (k + 10).toString(16).repeat(64)).join("\n"); }
     run();
   });
+})();
+
+/* ---------- 10: threshold vault, real AES-GCM and Shamir in the page ---------- */
+(async function vaultDemo() {
+  const svg = $("#vSvg"); if (!svg || !crypto.subtle) return;
+  const P = (1n << 521n) - 1n, N = 5, K = 3, TEXT = "COLD-STORAGE LEASE\nRent 12,000.00 per period, due by block 5 of each period. Disputes go to bank-0 as arbitrator.";
+  const NAMES = ["validator 0", "validator 1", "validator 2", "court registry", "statistics office"];
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  const mod = a => ((a % P) + P) % P;
+  const pow = (b, e) => { let r = 1n; b = mod(b); while (e > 0n) { if (e & 1n) r = r * b % P; b = b * b % P; e >>= 1n; } return r; };
+  const rand = () => { const b = crypto.getRandomValues(new Uint8Array(66)); return mod(b.reduce((a, x) => (a << 8n) | BigInt(x), 0n)); };
+  const toBytes = (v, n) => { const out = new Uint8Array(n); for (let i = n - 1; i >= 0; i--) { out[i] = Number(v & 255n); v >>= 8n; } return out; };
+  const hex = b => [...b].map(x => x.toString(16).padStart(2, "0")).join("");
+  const combine = sh => sh.reduce((tot, [xi, yi], i) => {
+    let num = 1n, den = 1n;
+    sh.forEach(([xj], j) => { if (i !== j) { num = num * mod(-xj) % P; den = den * mod(xi - xj) % P; } });
+    return mod(tot + yi * num % P * pow(den, P - 2n));
+  }, 0n);
+  let key, iv, ct, shares, state;
+  async function sealNew() {
+    const raw = crypto.getRandomValues(new Uint8Array(32)); iv = crypto.getRandomValues(new Uint8Array(12));
+    key = raw; const k = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt"]);
+    ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, k, enc.encode(TEXT)));
+    const secret = raw.reduce((a, x) => (a << 8n) | BigInt(x), 0n), coeffs = [secret, rand(), rand()];
+    shares = Array.from({ length: N }, (_, i) => { const x = BigInt(i + 1); return [x, coeffs.reduce((acc, c, j) => mod(acc + c * pow(x, BigInt(j))), 0n)]; });
+    state = { receipts: 0, mode: Array(N).fill("ok"), flying: [] };
+  }
+  async function tryOpen(sh) {
+    try {
+      const k = await crypto.subtle.importKey("raw", toBytes(combine(sh), 66).slice(-32), "AES-GCM", false, ["decrypt"]);
+      return dec.decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, k, ct));
+    } catch (e) { return null; }
+  }
+  const pos = i => { const a = Math.PI * (0.06 + 0.88 * i / (N - 1)); return [190 - 165 * Math.cos(a), 222 - 150 * Math.sin(a)]; };
+  function draw(highlight = []) {
+    svg.innerHTML = "";
+    el("rect", { x: 150, y: 190, width: 80, height: 70, rx: 10, fill: "var(--ink)" }, svg);
+    el("path", { d: "M170 190 v-14 a20 20 0 0 1 40 0 v14", fill: "none", stroke: "var(--ink)", "stroke-width": 7 }, svg);
+    el("text", { x: 190, y: 230, "text-anchor": "middle", fill: "var(--paper)", "font-size": 11 }, svg).textContent = "sealed";
+    el("text", { x: 190, y: 278, "text-anchor": "middle", fill: "var(--ink-2)", "font-size": 10.5 }, svg).textContent = `${ct.length} bytes of ciphertext`;
+    for (let i = 0; i < N; i++) {
+      const [x, y] = pos(i), m = state.mode[i], col = m === "off" ? "var(--rule)" : m === "liar" ? "var(--seal)" : highlight.includes(i) ? "var(--amber)" : "var(--verified)";
+      const g = el("g", { tabindex: 0, role: "button", "aria-label": `${NAMES[i]}: ${m === "ok" ? "honest" : m === "off" ? "offline" : "lying"}. Activate to change.`, style: "cursor:pointer" }, svg);
+      el("line", { x1: x, y1: y, x2: 190, y2: 205, stroke: "var(--rule)", "stroke-dasharray": "3 4" }, g);
+      el("circle", { cx: x, cy: y, r: 20, fill: "var(--sheet)", stroke: col, "stroke-width": 3 }, g);
+      el("text", { x, y: y + 4, "text-anchor": "middle", fill: "var(--ink)", "font-size": 11, "font-weight": 600 }, g).textContent = m === "off" ? "off" : m === "liar" ? "lies" : `x=${i + 1}`;
+      el("text", { x, y: y - 27, "text-anchor": "middle", fill: "var(--ink-2)", "font-size": 10 }, g).textContent = NAMES[i];
+      const cycle = () => { state.mode[i] = { ok: "off", off: "liar", liar: "ok" }[m]; draw(); };
+      g.addEventListener("click", cycle); g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cycle(); } });
+    }
+    el("rect", { x: 405, y: 120, width: 108, height: 60, rx: 10, fill: "var(--sheet)", stroke: "var(--ink)" }, svg);
+    el("text", { x: 459, y: 147, "text-anchor": "middle", fill: "var(--ink)", "font-weight": 600 }, svg).textContent = "reader (bakery)";
+    el("text", { x: 459, y: 165, "text-anchor": "middle", fill: state.receipts ? "var(--verified)" : "var(--ink-2)", "font-size": 10.5 }, svg).textContent =
+      `${state.receipts} unspent receipt${state.receipts === 1 ? "" : "s"}`;
+  }
+  function fly(idxs) {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return Promise.resolve();
+    return new Promise(res => {
+      const dots = idxs.map(i => { const [x, y] = pos(i); return el("circle", { cx: x, cy: y, r: 6, fill: state.mode[i] === "liar" ? "var(--seal)" : "var(--amber)" }, svg); });
+      const t0 = performance.now();
+      (function step(t) { const u = Math.min(1, (t - t0) / 900), e = 1 - Math.pow(1 - u, 3);
+        dots.forEach((d, k) => { const [x, y] = pos(idxs[k]); d.setAttribute("cx", x + (459 - x) * e); d.setAttribute("cy", y + (150 - y) * e - Math.sin(e * Math.PI) * 40); });
+        u < 1 ? requestAnimationFrame(step) : res(); })(t0);
+    });
+  }
+  const show = (verdict, cls, text, cap) => { $("#vVerdict").textContent = verdict; $("#vVerdict").className = "verdict " + cls; $("#vText").textContent = text; $("#vCap").innerHTML = cap; };
+  async function reset() {
+    await sealNew(); draw();
+    show("Sealed", "", hex(ct).replace(/(.{64})/g, "$1\n"), "This is everything the storage host holds: ciphertext. Each custodian holds one encrypted piece of the key. Record a receipt, then ask.");
+  }
+  $("#vReceipt").onclick = () => { state.receipts++; draw(); $("#vCap").textContent = "The bakery signs CONTRACT_ACCESS and it is finalised. Every custodian can now see, on the ledger, that this read is authorised and recorded."; };
+  $("#vAsk").onclick = async () => {
+    if (!state.receipts) { draw(); return show("Refused", "bad", "", "No VIEW receipt on the ledger, so all five custodians refuse. A read cannot happen without leaving a trace first."); }
+    state.receipts--;
+    const answering = [...Array(N).keys()].filter(i => state.mode[i] !== "off");
+    draw(answering); await fly(answering);
+    const got = answering.map(i => state.mode[i] === "liar" ? [BigInt(i + 1), rand()] : shares[i]);
+    // the reader checks each piece against the digest fixed at sealing time; here: the true share value
+    const honest = got.filter((s, k) => s[1] === shares[answering[k]][1]), liars = answering.filter((i, k) => got[k][1] !== shares[i][1]);
+    draw();
+    if (honest.length < K) return show("Not enough pieces", "bad", "", `${honest.length} valid piece${honest.length === 1 ? "" : "s"}, ${K} needed${liars.length ? `; ${liars.map(i => NAMES[i]).join(" and ")} handed back a forged piece and was caught` : ""}. The receipt is spent either way.`);
+    const text = await tryOpen(honest.slice(0, K));
+    show("Opened", "good", text, `${K} valid pieces rebuilt the key and the text decrypted${liars.length ? `; the forged piece from ${liars.map(i => NAMES[i]).join(" and ")} was detected and ignored` : ""}. Offline custodians: ${N - answering.length}. Ask again and you need a new receipt.`);
+  };
+  $("#vSteal").onclick = async () => {
+    const guess = await tryOpen([[1n, rand()], [2n, rand()], [3n, rand()]]);
+    show("Nothing", "bad", hex(ct).slice(0, 192) + "…", `Someone copies the sealed file and the encrypted pieces. Without three custodians' own keys the pieces are unreadable, and guessing the key failed${guess === null ? "" : " (unexpectedly)"}. A breach of the storage host leaks nothing.`);
+  };
+  $("#vCollude").onclick = async () => {
+    const two = await tryOpen([shares[0], shares[3]]);
+    show(two === null ? "Nothing" : "Leaked", two === null ? "bad" : "good", two || "decryption failed", `Validator 0 and the court registry pool their pieces, two of the three needed. Combined, two points fit infinitely many curves: every key is equally likely. Decryption ${two === null ? "fails" : "succeeded (this should never happen)"}.`);
+  };
+  $("#vReset").onclick = reset;
+  await reset();
 })();
 })();
 </script>

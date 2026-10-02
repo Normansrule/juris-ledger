@@ -877,7 +877,138 @@ def exp_confidential(verbose: bool = True) -> Dict[str, Any]:
     return {"checks": checks}
 
 
+# --------------------------------------------------------------------------- #
+def exp_vault(verbose: bool = True) -> Dict[str, Any]:
+    """Threshold-encrypted vault: no single party, host included, can read a restricted contract."""
+    import time as _time
+    from . import vault as Vt
+    from .crypto import KeyPair as _KP
+    from .privacy import decrypt_note, encrypt_note
+    m = MiniWorld()
+    w, checks = m.w, []
+    bakery, mill, auditor, alice = w["bakery"], w["mill"], w["auditor"], w["alice"]
+    names = ["validator-0", "validator-1", "validator-2", "court-registry", "statistics-office"]
+    keys = [_KP.from_seed(f"vault/{n}") for n in names]
+    custodians = [Vt.Custodian(k) for k in keys]
+    t = mill.create_contract("Supply Schedule (confidential)", SCHEDULE_PROSE, {"kg_per_month": 2000},
+                             [mill.address, bakery.address], visibility="restricted")
+    m.send(t, bakery.sign_contract(t.txid, SCHEDULE_PROSE))
+    cid = t.txid
+    t0 = _time.perf_counter()
+    sealed = Vt.seal(cid, SCHEDULE_PROSE, m.chain, [k.address for k in keys], threshold=3)
+    seal_ms = (_time.perf_counter() - t0) * 1000
+    blob = json.dumps(sealed)
+    try:
+        Vt.open_sealed(sealed, bakery.key, [])
+        host_reads = True
+    except Vt.VaultError:
+        host_reads = False
+    checks.append(("the sealed file holds none of the text, and its holder alone cannot open it",
+                   SCHEDULE_PROSE not in blob and "2,000" not in blob and not host_reads))
+
+    refusal = ""
+    try:
+        Vt.collect(sealed, bakery.key, custodians, m.chain)
+    except Vt.VaultError as err:
+        refusal = str(err)
+    checks.append(("with no VIEW receipt on the ledger, every custodian refuses", "valid shares" in refusal
+                   and all(len(c.log) == 0 for c in custodians)))
+
+    m.send(alice.access(cid, "VIEW", "curious"))
+    outsider_receipt = any(e["accessor"] == alice.address for e in m.chain.state.access_log)
+    try:
+        custodians[0].release(sealed, alice.address, m.chain)
+        outsider_share = True
+    except Vt.VaultError:
+        outsider_share = False
+    checks.append(("an outsider can neither record a receipt for a restricted contract nor obtain a share",
+                   not outsider_receipt and not outsider_share))
+
+    m.send(bakery.access(cid, "VIEW", "checking the delivery schedule"))
+    t0 = _time.perf_counter()
+    text, refusals = Vt.collect(sealed, bakery.key, custodians, m.chain)
+    read_ms = (_time.perf_counter() - t0) * 1000
+    checks.append(("with a receipt, the custodians release and the party reads exactly the signed text",
+                   text == SCHEDULE_PROSE and not refusals))
+
+    own = [decrypt_note(k.secret_hex(), k.address, sealed["shares"][k.address]) for k in keys[:2]]
+    two = [(int(n["x"]), int(n["y"], 16)) for n in own]
+    guess = Vt.combine(two).to_bytes(66, "big")[-32:]
+    try:
+        AESGCM_ok = True
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        AESGCM(guess).decrypt(bytes.fromhex(sealed["nonce"]), bytes.fromhex(sealed["ciphertext"]), cid.encode())
+    except Exception:  # noqa: BLE001
+        AESGCM_ok = False
+    checks.append(("two colluding custodians, one short of the threshold, cannot decrypt", not AESGCM_ok))
+
+    m.send(bakery.access(cid, "VIEW", "second look"))
+    intercepted = custodians[0].release(sealed, bakery.address, m.chain)
+    try:
+        decrypt_note(alice.key.secret_hex(), alice.address, intercepted)
+        snooped = True
+    except Exception:  # noqa: BLE001
+        snooped = False
+    checks.append(("a release intercepted in transit is useless to anyone but the reader", not snooped))
+
+    try:
+        custodians[0].release(sealed, bakery.address, m.chain)        # second receipt already spent above
+        replay = True
+    except Vt.VaultError:
+        replay = False
+    checks.append(("one receipt buys one release per custodian: reading again needs a new receipt", not replay))
+
+    class Liar(Vt.Custodian):
+        def release(self, sealed, reader, chain):
+            super().release(sealed, reader, chain)
+            return encrypt_note(reader, {"contract_id": sealed["contract_id"], "x": 2, "y": format(12345, "x"),
+                                         "custodian": self.address})
+    m.send(bakery.access(cid, "VIEW", "third look"))
+    mixed = [Liar(keys[1])] + [Vt.Custodian(k) for k in (keys[0], keys[2], keys[3])]
+    text2, refusals2 = Vt.collect(sealed, bakery.key, mixed, m.chain)
+    checks.append(("a custodian returning a forged share is caught; the honest ones still open the text",
+                   text2 == SCHEDULE_PROSE and keys[1].address in refusals2))
+
+    m.send(bakery.access(cid, "VIEW", "fourth look"))
+    fresh = [Vt.Custodian(k) for k in keys]
+    text3, _ = Vt.collect(sealed, bakery.key, fresh[2:], m.chain)            # two custodians offline
+    m.send(bakery.access(cid, "VIEW", "fifth look"))
+    try:
+        Vt.collect(sealed, bakery.key, fresh[3:], m.chain)                   # three offline
+        too_few = True
+    except Vt.VaultError:
+        too_few = False
+    checks.append(("two of five custodians offline: still readable; three offline: nobody can read",
+                   text3 == SCHEDULE_PROSE and not too_few))
+
+    m.send(mill.grant(cid, auditor.address))
+    before = len(m.chain.state.access_log)
+    m.send(auditor.access(cid, "VIEW", "annual audit"))
+    on_record = len(m.chain.state.access_log) == before + 1
+    text4, _ = Vt.collect(sealed, auditor.key, [Vt.Custodian(k) for k in keys], m.chain)
+    checks.append(("a granted auditor reads, and the read is on the public ledger before the text is released",
+                   on_record and text4 == SCHEDULE_PROSE))
+
+    other = mill.create_contract("Another schedule", FRAMEWORK_PROSE, {}, [mill.address, bakery.address], visibility="restricted")
+    m.send(other, bakery.sign_contract(other.txid, FRAMEWORK_PROSE), bakery.access(other.txid, "VIEW", "x"))
+    swapped = {**sealed, "contract_id": other.txid}
+    try:
+        Vt.Custodian(keys[0]).release(swapped, bakery.address, m.chain)
+        swap_ok = True
+    except Vt.VaultError:
+        swap_ok = False
+    checks.append(("a sealed file relabelled as a different contract is refused", not swap_ok))
+
+    if verbose:
+        print(f"  sealed: {Vt.sealed_bytes(sealed):,} bytes for {len(SCHEDULE_PROSE)} characters of text, "
+              f"3-of-5 custodians ({', '.join(names)}); sealing {seal_ms:.0f} ms, a receipted read {read_ms:.0f} ms")
+        print("  who saw it, from the public ledger:")
+        for e in audit_trail(m.chain, cid):
+            print(f"    block {e['height']:>2}  {e['action']:<5} by {e['accessor_name']:<8} {e['context']}")
+    return {"checks": checks}
+
+
 EXPERIMENTS: Dict[str, Callable[..., Dict[str, Any]]] = {
     "contracts": exp_contracts, "legal": exp_legal, "disputes": exp_disputes, "identity": exp_identity, "attacks": exp_attacks, "asynchrony": exp_asynchrony, "integration": exp_integration, "gdp": exp_gdp,
-    "fraud": exp_fraud, "privacy": exp_privacy, "confidential": exp_confidential,
+    "fraud": exp_fraud, "privacy": exp_privacy, "confidential": exp_confidential, "vault": exp_vault,
 }

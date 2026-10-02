@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.23.0 — the threshold vault
+- `vault.py`: restricted contract texts encrypted with AES-256-GCM, the key split with Shamir's scheme among custodians (any k of n), each piece encrypted to its custodian. Custodians release a piece only to a reader the ledger shows is authorised and holds an unspent VIEW receipt, encrypted to that reader, journalled to disk before it leaves; per-piece hashes catch a custodian returning a forged piece. Completes roadmap phase 5.
+- `jurisledger vault`: the twelfth experiment, eleven claims (no receipt, outsider, two colluders, eavesdropper, receipt replay, forged piece, custodians offline, relabelled file, auditor access on the record). 112 claims in all.
+- Explainer step 10, "Lock the text away": real AES-GCM and Shamir sharing in the page; take custodians offline, make one lie, steal the sealed file, let two collude.
+- Accessibility: step numbers now meet the 3:1 contrast for large text; the audit reports 0 problems again.
+- 179 tests.
+
 ## 0.22.0 — bounded disks: pruning and joining by snapshot
 - `jurisledger prune --store DIR --keep N` and `jurisledger node --prune-every N`: a store becomes a certified snapshot plus the recent blocks; retired blocks move, gzip-compressed, to `store/archive/` (`--no-archive` drops them). Every write is temp-file, fsync, rename; a crash between steps still opens. On a 2,295-transaction ledger, `blocks.jsonl` shrinks from 991 kB to 166 kB plus a 10 kB snapshot, the archive holds the rest in 193 kB, and restart re-verification drops from 0.43 s to 0.10 s.
 - State sync: a validator asking for blocks a peer has pruned receives the peer's certified snapshot, checks it against the validator set it already trusts and the certified state digest, and continues from there. Tested live on four processes with one validator joining late.

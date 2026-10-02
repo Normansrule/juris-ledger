@@ -6,7 +6,7 @@
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
-@media (prefers-color-scheme:dark){:root{--paper:#0E1420;--sheet:#151D2B;--ink:#E8EDF4;--ink-2:#A6B3C6;--rule:#2A3648;--wash:#1C2637;--seal:#EC6461;--verified:#3FBDAA;--amber:#E0A045;--amber-ink:#E0A045}}
+@media (prefers-color-scheme:dark){:root{--paper:#0E1420;--sheet:#151D2B;--ink:#E8EDF4;--ink-2:#A6B3C6;--rule:#2A3648;--wash:#1C2637;--seal:#EC6461;--verified:#3FBDAA;--amber:#E0A045;--amber-ink:#E0A045;--num:#63748C}}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth;scroll-padding-top:4rem}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.001s!important;transition-duration:.001s!important}}
@@ -35,7 +35,7 @@ nav.folios a:hover,nav.folios a:focus-visible{color:var(--ink);border-color:var(
 #heroCanvas{width:100%;height:auto;aspect-ratio:1/1;max-height:520px;display:block}
 .folio{padding:4rem 0;border-top:1px solid var(--rule)}
 .folio .head{display:grid;grid-template-columns:5rem 1fr;gap:1rem;align-items:baseline;margin-bottom:1.5rem}
-.folio .num{font-family:var(--serif);font-size:3rem;color:var(--rule);line-height:1}
+.folio .num{font-family:var(--serif);font-size:3rem;color:var(--num,#75829A);line-height:1}
 .stage{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:1.2rem;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:1.2rem}
 @media (max-width:860px){.hero,.stage{grid-template-columns:1fr}.folio .head{grid-template-columns:1fr}}
 .stage svg{width:100%;height:auto;display:block}

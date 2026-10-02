@@ -55,6 +55,7 @@
 
 | 27 | A peer sends a forged snapshot to a validator that is catching up | The snapshot is accepted only with signatures from more than two thirds of the validator set this node already trusts, and only if the restored state's digest equals the certified one; otherwise it is counted as rejected and ignored | A validator set that changed by vote after the joining node's last known state: it must first learn the new set (from blocks or a trusted operator) |
 | 28 | A store is edited on disk, or two processes write it at once | The snapshot file is checked like any certificate on every start; the blocks after it are re-audited; writes are temp-file, fsync, rename; an exclusive lock refuses a second writer | An attacker who controls the machine (it can also replace the program) |
+| 29 | The host of restricted contract texts is breached, subpoenaed or curious | Texts are stored encrypted (AES-256-GCM) with the key split 3-of-5 (Shamir) among independent custodians, each piece encrypted to its custodian; a custodian releases only to an authorised reader with an unspent VIEW receipt on the ledger, encrypted to that reader, journalled to disk first; forged pieces are detected by hashes fixed at sealing | Three custodians colluding; a reader who has the text sharing it further |
 
 ## Pruning and history
 

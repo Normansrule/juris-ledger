@@ -132,3 +132,14 @@ Each is a candidate experiment: state the claim, write the attack, keep the resu
 **Result.** Eleven claims pass. A confidential payment is about 22 kB and takes about half a second to prove and about the same to finalise through four validators, all in pure Python. Every attack is rejected. The opened sum verifies against the on-chain total and a false sum does not.
 
 **Does not show.** Hidden counterparties or purposes, or constant-time cryptography. (Since 0.9 the opening is delivered encrypted inside the transaction; `tests/test_snapshot_wallet.py` covers it.)
+
+## 7. `vault` — restricted contracts no single holder can read
+
+**Hypothesis.** The text of a restricted contract can be stored so that no single party — the storage host, any one custodian, or any two of them — can read it, while authorised parties still can, and every read is on the public ledger before it happens.
+
+**Method.** The text is encrypted with AES-256-GCM; the 256-bit key is split with Shamir's scheme, 3 of 5, among two validators, a third validator, a court registry and a statistics office, each piece encrypted to that custodian's own key. A custodian releases its piece, encrypted to the reader, only if the chain shows the reader is authorised and has an unspent VIEW receipt. Attacks: reading without a receipt; an outsider; two colluding custodians; an eavesdropper on a release; spending one receipt twice; a custodian returning a forged piece; custodians offline; a sealed file relabelled as another contract.
+
+**Result.** Eleven claims pass. The sealed file is about 4.6 kB for a short contract; sealing takes about 25 ms and a receipted read about 45 ms in pure Python. Forged pieces are caught by per-piece hashes fixed at sealing time; custodians journal every release to disk before it leaves, so a restart cannot re-spend a receipt (`tests/test_vault.py`). The same demonstration runs with real cryptography in the explainer's step 10.
+
+**Does not show.** Proactive re-sharing when custodians change, revocation of a reader who already holds the text, or protection once the text is in an authorised reader's hands. Custodians check receipts against their own copy of the ledger; a custodian that is not a validator should follow a validator over pinned TLS.
+

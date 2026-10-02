@@ -53,6 +53,7 @@ TITLES = {
     "fraud": "Fraud detection on a shared ledger",
     "privacy": "Commitments and differentially private statistics (experimental)",
     "confidential": "Confidential payments with range proofs on the real ledger",
+    "vault": "Threshold-encrypted contract vault: no single holder can read",
 }
 
 
