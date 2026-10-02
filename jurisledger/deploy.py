@@ -54,8 +54,9 @@ def init(out_dir: str, validators: List[str], issuers: List[str], chain_id: str,
 # Validator {i} of {chain_id}.  Run from a folder containing genesis.json and peers.json.
 set -euo pipefail
 cd "$(dirname "$0")"
-exec jurisledger node --genesis ../genesis.json --key validator-{i}.key.json --peers ../peers.json \\
-     --store store --index {i} --listen 0.0.0.0:{port}
+if command -v jurisledger >/dev/null 2>&1; then JL=(jurisledger); else JL=(python3 -m jurisledger); fi
+exec "${{JL[@]}}" node --genesis ../genesis.json --key validator-{i}.key.json --peers ../peers.json \\
+     --store store --index {i} --listen 0.0.0.0:{port} "$@"
 ''')
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
     for n, k in ikeys.items():

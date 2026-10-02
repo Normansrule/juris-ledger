@@ -49,7 +49,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import bft
 from . import consensus as C
 from . import tx as T
-from .block import Block
+from .block import Block, BlockHeader
 from .chain import Chain, InvalidBlock
 from .consensus import Node
 from .crypto import KeyPair, verify
@@ -264,6 +264,8 @@ class Validator:
     inbox: "queue.Queue[Dict[str, Any]]" = field(default_factory=queue.Queue)
     stop_event: threading.Event = field(default_factory=threading.Event)
     rejected: int = 0
+    prune_every: int = 0                  # >0: keep between this many and twice this many blocks on disk
+    keep_archive: bool = True             # pruned blocks go to store/archive/ rather than being dropped
 
     def __post_init__(self) -> None:
         self.index = self.genesis["validators"].index(self.key.address)
@@ -273,11 +275,14 @@ class Validator:
             raise SystemExit(f"the store in {self.store.dir} belongs to a different ledger (its founding record "
                              f"differs from {self.genesis['chain_id']}). Use an empty --store directory for a new "
                              f"ledger, or the matching genesis file to resume this one.")
+        self.store.lock()                                      # one process per store, released if we die
         recovered = self.store.load()                          # resume from disk; re-audits every block
-        for b in recovered.blocks:
-            self.inner.commit(b)
+        self.inner.chain = recovered                           # (from a certified snapshot if the store was pruned)
         if recovered.height:
-            self.log(f"[v{self.index}] resumed from disk at block {recovered.height}")
+            self.log(f"[v{self.index}] resumed from disk at block {recovered.height}"
+                     + (f" (certified snapshot at block {recovered.base_height}, then {len(recovered.blocks)} blocks)"
+                        if recovered.base_height else ""))
+        self.snapshots_served = self.snapshots_installed = 0
         self.transport = Transport(self.index, self.peers, self.inbox, list(self.genesis["validators"]), self.key)
         self.tls = server_context(self.key)
         self.connections = threading.Semaphore(MAX_CONNECTIONS)
@@ -292,6 +297,37 @@ class Validator:
     @property
     def chain(self) -> Chain:
         return self.inner.chain
+
+    def _prune(self) -> None:
+        r = self.store.compact(self.prune_every, self.keep_archive)
+        if not r["pruned"]:
+            return
+        snap = {k: v for k, v in self.store.snapshot().items() if k != "certified_by"}
+        c = self.chain                                         # same state; drop retired blocks from memory too
+        c.blocks = [b for b in c.blocks if b.header.height > r["base"]]
+        c.base_height, c.base_hash, c.snapshot = r["base"], BlockHeader.from_dict(snap["header"]).hash, snap
+        self.log(f"[v{self.index}] pruned {r['pruned']} blocks up to {r['base']} "
+                 f"({'archived' if self.keep_archive else 'dropped'}); disk {r['bytes_before']:,} -> {r['bytes_after']:,} bytes")
+
+    def _install_snapshot(self, snap: Dict[str, Any], src: int) -> None:
+        """A peer that pruned the blocks we lack sent its certified state instead."""
+        try:
+            header = BlockHeader.from_dict(snap["header"])
+            if header.height <= self.chain.height:
+                return
+            trusted = list(self.chain.state.validators)        # the set this node already trusts
+            fresh = Chain.from_snapshot(self.genesis, snap, trusted)
+        except (InvalidBlock, KeyError, ValueError, TypeError):
+            self.rejected += 1
+            return
+        old = list(self.chain.blocks)
+        self.store.install_snapshot(snap, [], old, trusted, self.keep_archive)
+        self.inner.chain = fresh
+        self.snapshots_installed += 1
+        self.log(f"[v{self.index}] jumped to block {header.height} from a certified snapshot "
+                 f"({len(snap['votes'])} validator signatures checked, state digest matched)")
+        self._start_height()
+        self.transport.send_raw(src, {"t": "get_blocks", "from": self.chain.height + 1, "reply_to": self.index})
 
     def _start_height(self) -> None:
         height = self.chain.height + 1
@@ -312,6 +348,9 @@ class Validator:
         self.inner.commit(block)
         self.store.append(block)
         self.blocks_committed += 1
+        h = block.header.height
+        if self.prune_every and h % self.prune_every == 0 and h - self.chain.base_height > self.prune_every:
+            self._prune()
         for ev in (self.proto.evidence if self.proto else []):
             self.inner.receive_tx(ev)
             self.transport.broadcast_raw({"t": "tx", "tx": ev.to_dict()})
@@ -319,7 +358,7 @@ class Validator:
             self.log(f"[v{self.index}] committed block {block.header.height} "
                      f"({len(block.txs)} tx, round {block.vote_round}, {len(block.votes)} votes)")
 
-    PEER_ONLY = {"msg", "get_blocks", "blocks", "status_reply"}
+    PEER_ONLY = {"msg", "get_blocks", "blocks", "status_reply", "snapshot"}
 
     def _handle(self, obj: Dict[str, Any]) -> None:
         t = obj.get("t")
@@ -350,6 +389,12 @@ class Validator:
             if tx.txid not in self.inner.mempool and tx.signature_valid():
                 self.inner.receive_tx(tx)
                 self.transport.broadcast_raw(obj)               # gossip once
+        elif t == "get_blocks" and int(obj.get("from", 1)) <= self.chain.base_height and self.chain.snapshot:
+            self.snapshots_served += 1                          # those blocks were pruned here: send the state
+            self.transport.send_raw(int(obj["reply_to"]), {"t": "snapshot", "snapshot": self.chain.snapshot,
+                                                           "from_index": self.index})
+        elif t == "snapshot":
+            self._install_snapshot(obj.get("snapshot") or {}, int(obj["_peer"]))
         elif t == "get_blocks":
             start = int(obj.get("from", 1))
             lo = max(0, start - self.chain.base_height - 1)
@@ -491,12 +536,13 @@ class Validator:
 
 
 def serve(key: KeyPair, genesis: Dict[str, Any], peers: List[Tuple[str, int]], store_dir: str,
-          listen: Tuple[str, int], until_height: Optional[int] = None, log: Any = print) -> Validator:
+          listen: Tuple[str, int], until_height: Optional[int] = None, log: Any = print,
+          prune_every: int = 0, keep_archive: bool = True) -> Validator:
     if not (BlockStore(store_dir).genesis_path.exists()):
         store = BlockStore.create(store_dir, genesis)
     else:
         store = BlockStore(store_dir)
-    v = Validator(key, genesis, peers, store, listen, log=log)
+    v = Validator(key, genesis, peers, store, listen, log=log, prune_every=prune_every, keep_archive=keep_archive)
     v.run(until_height)
     return v
 

@@ -21,6 +21,8 @@
   jurisledger api ledger.db [--port 8080] [--follow HOST:PORT --every 10]
                                           read-only JSON API over the index (feeds site/dashboard.html)
   jurisledger fuzz [--runs N --steps M --seed S]   random attacks on the state machine, eight invariants checked
+  jurisledger prune --store DIR [--keep N] [--no-archive]   shrink a stopped validator's store to a certified
+                                          snapshot plus the last N blocks; older blocks go to DIR/archive/
   jurisledger doctor                      check this machine's Python, packages, Node and network setup
   jurisledger submit SIGNED_TX.json HOST:PORT [--pin ADDR]  send a transaction signed elsewhere (e.g. the web wallet)
   jurisledger status HOST:PORT            height, state digest and mempool of a running validator
@@ -128,6 +130,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--genesis"); ap.add_argument("--key"); ap.add_argument("--peers")
     ap.add_argument("--store"); ap.add_argument("--index", type=int); ap.add_argument("--listen")
     ap.add_argument("--until", type=int, default=None)
+    ap.add_argument("--prune-every", type=int, default=0); ap.add_argument("--keep", type=int, default=1000)
+    ap.add_argument("--no-archive", action="store_true")
     ap.add_argument("--to"); ap.add_argument("--amount"); ap.add_argument("--purpose")
     ap.add_argument("--name"); ap.add_argument("--role", default="household"); ap.add_argument("--sector", default="")
     ap.add_argument("--pin", help="validator address to pin the TLS certificate to")
@@ -191,8 +195,12 @@ def main(argv: list[str]) -> int:
         if key.address != genesis["validators"][args.index]:
             print("the key does not match validator", args.index, "in the genesis"); return 2
         print(f"validator {args.index} listening on {listen[0]}:{listen[1]}", flush=True)
-        serve(key, genesis, peers, args.store, listen, until_height=args.until,
-              log=lambda m: print(m, flush=True))
+        from .storage import StoreBusy
+        try:
+            serve(key, genesis, peers, args.store, listen, until_height=args.until,
+                  log=lambda m: print(m, flush=True), prune_every=args.prune_every, keep_archive=not args.no_archive)
+        except StoreBusy as err:
+            print(f"REFUSED. {err}"); return 1
         return 0
     if cmd == "wallet":
         from . import wallet as W
@@ -273,6 +281,26 @@ def main(argv: list[str]) -> int:
             fuzz(runs=args.runs, steps=args.steps, seed=args.seed)
         except InvariantBroken as err:
             print(f"INVARIANT BROKEN. {err}"); return 1
+        return 0
+    if cmd == "prune":
+        from .storage import BlockStore, StoreBusy
+        if not args.store or not BlockStore(args.store).genesis_path.exists():
+            print("prune what? give --store DIR (a validator's store directory)"); return 2
+        st = BlockStore(args.store)
+        try:
+            st.lock()
+            r = st.compact(args.keep, keep_archive=not args.no_archive)
+        except StoreBusy as err:
+            print(f"REFUSED. {err}. Stop it first, or start it with --prune-every to prune while running."); return 1
+        except InvalidBlock as err:
+            print(f"REFUSED. The store does not verify, so it will not be pruned: {err}"); return 1
+        finally:
+            st.unlock()
+        if not r["pruned"]:
+            print(f"nothing to prune: block {r['height']}, already starting from block {r['base']}"); return 0
+        print(f"pruned blocks up to {r['base']} into a certified snapshot; blocks {r['base'] + 1}-{r['height']} kept. "
+              f"blocks.jsonl {r['bytes_before']:,} -> {r['bytes_after']:,} bytes; "
+              + ("retired blocks are in " + str(st.archive_dir) if not args.no_archive else "retired blocks DROPPED"))
         return 0
     if cmd == "doctor":
         from .doctor import run as doctor

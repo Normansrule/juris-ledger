@@ -104,6 +104,10 @@ class Index:
         have = self.height
         if have > chain.height:
             raise IndexError_(f"the index is at block {have} but the chain offered ends at block {chain.height}")
+        if 0 < have < chain.base_height:
+            raise IndexError_(f"the index stops at block {have} but this chain starts from a snapshot at block "
+                              f"{chain.base_height}: blocks {have + 1}-{chain.base_height} were pruned there; "
+                              "feed the index from an archive node or a validator that keeps more blocks")
         if have and have > chain.base_height:
             stored = self.db.execute("SELECT hash FROM blocks WHERE height=?", (have,)).fetchone()[0]
             if chain.block_at(have).hash != stored:

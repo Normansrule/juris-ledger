@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.22.0 — bounded disks: pruning and joining by snapshot
+- `jurisledger prune --store DIR --keep N` and `jurisledger node --prune-every N`: a store becomes a certified snapshot plus the recent blocks; retired blocks move, gzip-compressed, to `store/archive/` (`--no-archive` drops them). Every write is temp-file, fsync, rename; a crash between steps still opens. On a 2,295-transaction ledger, `blocks.jsonl` shrinks from 991 kB to 166 kB plus a 10 kB snapshot, the archive holds the rest in 193 kB, and restart re-verification drops from 0.43 s to 0.10 s.
+- State sync: a validator asking for blocks a peer has pruned receives the peer's certified snapshot, checks it against the validator set it already trusts and the certified state digest, and continues from there. Tested live on four processes with one validator joining late.
+- Store locking: a running validator holds an exclusive lock; a second validator or `prune` on the same store is refused.
+- `start.sh` from `jurisledger init` falls back to `python3 -m jurisledger` when the command is not on PATH, and passes extra flags through (`./start.sh --prune-every 1000`).
+- The SQL index refuses to skip a range that a validator pruned.
+- Archive plus store replay to the identical state (tested). Threat model rows 27 and 28 and a note on history.
+- 173 tests.
+
 ## 0.21.0 — invariant fuzzing
 - `fuzz.py` and `jurisledger fuzz`: seeded random sequences of honest, malformed and hostile transactions against the state machine, with eight invariants checked after every one (conservation of money, no negative balances, atomic refusals, one-step transaction numbers, attacks always refused, contract activation, deterministic replay, snapshot round-trip). 150,000 transactions, no violation. Failures print the seed and step to replay exactly.
 - Two mutation tests plant bugs and require the fuzzer to catch them. Continuous integration now fuzzes 25,000 transactions on every commit.

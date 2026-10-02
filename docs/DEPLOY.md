@@ -50,7 +50,9 @@ Pin the validator you talk to with `--pin <its address from genesis.json>` when 
 | Task | How |
 |---|---|
 | A validator crashed | run `start.sh` again; it resumes from `store/` and asks peers for the blocks it missed |
-| A validator's disk is lost | copy a fresh `jurisledger snapshot` from a peer next to `genesis.json`, or let it replay from peers |
+| A validator's disk is lost | start it with an empty `store/`: it asks peers for blocks, and if they have pruned them it receives a certified snapshot instead, checks its validator signatures and state digest, and continues from there |
+| The disk is filling up | start validators with `./start.sh --prune-every 1000` (keeps 1,000 to 2,000 recent blocks; older ones move, gzip-compressed, to `store/archive/`), or stop one and run `jurisledger prune --store store --keep 1000`. Keep at least one archive node that never runs with `--no-archive`: it is the ledger's full legal history |
+| Someone starts a second validator on the same store by mistake | it is refused: a running validator holds an exclusive lock on the store |
 | Limit spam | vote `SET_POLICY` `max_tx_per_block` (for example 50): no account can place more than that many transactions in one block |
 | Track the data | `jurisledger index HOST:PORT -o ledger.db` on a schedule, then `query` and `metrics`; see [`DATA.md`](DATA.md) |
 | Change the identity threshold or payment cap | each validator sends a `VALIDATOR_VOTE` with `SET_POLICY`; effective when more than two thirds agree |

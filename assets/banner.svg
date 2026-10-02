@@ -17,7 +17,7 @@
   <text x="60" y="118" class="t" font-size="64">JurisLedger</text>
   <text x="62" y="160" class="s" font-size="22">A ledger that nobody owns, and anybody can check.</text>
   <text x="62" y="196" class="s" font-size="16">Signed contracts · arbitration · verifiable national accounts · fraud detection · confidential payments</text>
-  <text x="62" y="222" class="s" font-size="16">Byzantine-fault-tolerant validators over TLS · 11 experiments · 101 checked claims · 166 tests</text>
+  <text x="62" y="222" class="s" font-size="16">Byzantine-fault-tolerant validators over TLS · 11 experiments · 101 checked claims · 173 tests</text>
   <g transform="translate(700,120)">
     <g class="blk"><rect x="0" y="0" width="56" height="56" rx="8" class="sheet"/><rect x="0" y="0" width="56" height="56" rx="8" class="rule"/><text x="28" y="34" text-anchor="middle" class="s" font-size="13">1</text></g>
     <g class="blk"><line x1="56" y1="28" x2="72" y2="28" class="rule"/><rect x="72" y="0" width="56" height="56" rx="8" class="sheet"/><rect x="72" y="0" width="56" height="56" rx="8" class="rule"/><text x="100" y="34" text-anchor="middle" class="s" font-size="13">2</text></g>

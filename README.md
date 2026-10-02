@@ -141,7 +141,7 @@ jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
 jurisledger all                    # run all eleven experiments (101 claims)
-python -m pytest                   # 166 tests; every printed claim is also asserted
+python -m pytest                   # 173 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -389,13 +389,14 @@ assets/banner.svg  animated README banner
   fraud.py         four detectors
   ec.py            Ed25519 point arithmetic for commitments
   privacy.py       Pedersen commitments and bit-decomposition range proofs
-  storage.py       durable append-only block store; re-audits on open; survives torn writes
+  storage.py       durable append-only block store; re-audits on open; survives torn writes;
+                   prunes to a certified snapshot with a gzip archive; exclusive lock per store
   dashboard.py     the self-contained browsable public register
   demo.py          sample ledger + evidence file + register, for first contact
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
   experiments.py   the eleven experiments; every claim is a checked boolean
-tests/             166 tests
+tests/             173 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```

@@ -102,3 +102,40 @@ def test_unauthenticated_connections_cannot_send_consensus_traffic(tmp_path):
         s.close(); s2.close()
     finally:
         v.stop_event.set()
+
+
+def test_pruning_validators_keep_running_and_a_late_validator_joins_by_snapshot(tmp_path):
+    import subprocess
+    import time
+    from jurisledger.cluster import node_command, wait_height, write_cluster_files
+    from jurisledger.net import Client
+    from jurisledger.storage import BlockStore
+    f = write_cluster_files(tmp_path, 4)
+    vals = f["genesis"]["validators"]
+    logs = [open(tmp_path / f"v{i}.log", "w") for i in range(4)]
+    cmd = lambda i: node_command(tmp_path, i) + ["--prune-every", "4"]
+    procs = {i: subprocess.Popen(cmd(i), stdout=logs[i], stderr=subprocess.STDOUT) for i in range(3)}  # v3 stays offline
+    try:
+        c0 = Client("127.0.0.1", f["ports"][0], expect_address=vals[0])
+        assert wait_height(c0, 14, 120).get("height", 0) >= 14
+        store0 = BlockStore(tmp_path / "store-0")
+        assert store0.snapshot() and store0.archived()                       # pruned while running, history archived
+        procs[3] = subprocess.Popen(cmd(3), stdout=logs[3], stderr=subprocess.STDOUT)
+        c3 = Client("127.0.0.1", f["ports"][3], expect_address=vals[3])
+        target = c0.status()["height"] + 2
+        assert wait_height(c3, target, 120).get("height", 0) >= target       # caught up past the pruned blocks
+        time.sleep(1)
+        assert "certified snapshot" in (tmp_path / "v3.log").read_text()
+        for i in range(4):
+            procs[i].terminate(); procs[i].wait(10)
+        chains = [BlockStore(tmp_path / f"store-{i}").load() for i in range(4)]   # every store reopens and re-verifies
+        h = min(c.height for c in chains)
+        assert all(c.height >= h for c in chains) and chains[3].base_height > 0
+        busy = BlockStore(tmp_path / "store-0"); busy.lock()
+        r = subprocess.run(node_command(tmp_path, 0), capture_output=True, text=True, timeout=30)
+        assert "REFUSED" in r.stdout and "another process" in r.stdout              # a second validator on one store is refused
+        busy.unlock()
+    finally:
+        for p in procs.values():
+            if p.poll() is None:
+                p.kill()
