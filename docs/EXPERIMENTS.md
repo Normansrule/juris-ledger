@@ -143,3 +143,13 @@ Each is a candidate experiment: state the claim, write the attack, keep the resu
 
 **Does not show.** Proactive re-sharing when custodians change, revocation of a reader who already holds the text, or protection once the text is in an authorised reader's hands. Custodians check receipts against their own copy of the ledger; a custodian that is not a validator should follow a validator over pinned TLS.
 
+## 8. `accounts` — supply and use tables from the ledger
+
+**Hypothesis.** The tables behind a GDP figure can be read directly from validated payments, balance exactly, and agree with an independently recorded truth.
+
+**Method.** A six-period simulated economy (four sectors, government, the rest of the world). Build the supply and use tables from the chain and, separately, from the SQL index; compare final uses and each industry's output with the simulator's own record; compute the Leontief inverse in rational arithmetic; build the tables period by period and add them up; repeat with 30% of trade in cash.
+
+**Result.** Ten claims pass. Every product balances; GDP is identical by production, expenditure and income and equals the truth; every industry's output equals the truth; the Leontief inverse reproduces output exactly; index and chain give identical tables; periods add up. With 30% cash the tables still balance while GDP captures 87% of the truth — the honest limit.
+
+**Does not show.** A real statistics office's classification (products are sectors here), prices other than purchasers' prices, inventories, or margins.
+

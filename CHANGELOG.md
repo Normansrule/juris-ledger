@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.24.0 — supply and use tables
+- `accounts.py` and `jurisledger sut CHAIN.json|ledger.db [FROM TO] [-o DIR]`: the supply and use tables behind GDP, read from validated payments — products by industry and by final use (C, I, G, X), value added by industry (compensation, net taxes on production, operating surplus), supply = use checked for every product, and the Leontief inverse with output multipliers in exact rational arithmetic. CSV export.
+- `jurisledger accounts`: the thirteenth experiment, ten claims (exact balance, GDP three ways equals the truth, each industry's output equals the truth, Leontief reproduces output exactly, index and chain agree, periods add up, and the honest limit: with 30% cash the tables still balance while GDP falls short). 122 claims in all. Roadmap phase 6.
+- `/api/sut`, and two dashboard panels: the use table as a readable heatmap, and "What if demand rises?" — pick a product and an amount and watch the extra output each industry needs.
+- The SQL index records `tax_type` (schema 2); an older index is rebuilt automatically the next time `jurisledger index` runs.
+- Accessibility audit: 0 problems.
+- 185 tests.
+
 ## 0.23.0 — the threshold vault
 - `vault.py`: restricted contract texts encrypted with AES-256-GCM, the key split with Shamir's scheme among custodians (any k of n), each piece encrypted to its custodian. Custodians release a piece only to a reader the ledger shows is authorised and holds an unspent VIEW receipt, encrypted to that reader, journalled to disk before it leaves; per-piece hashes catch a custodian returning a forged piece. Completes roadmap phase 5.
 - `jurisledger vault`: the twelfth experiment, eleven claims (no receipt, outsider, two colluders, eavesdropper, receipt replay, forged piece, custodians offline, relabelled file, auditor access on the record). 112 claims in all.

@@ -10,6 +10,7 @@ Endpoints (GET only; everything else is 405):
     /api/gdp?from=A&to=B                  GDP by expenditure for a block range
     /api/metrics?from=A&to=B              the per-block time series (at most 5,000 rows per call)
     /api/accounts/top?n=10                busiest accounts
+    /api/sut?from=A&to=B                  supply and use tables, Leontief inverse and multipliers
     /api/account/<name or address>        one account's latest payments
     /api/contract/<id>                    a contract's timeline
 
@@ -123,7 +124,17 @@ def make_handler(db_path: Path, limiter: RateLimiter, cors: str) -> type:
             raise LookupError(f"no contract {cid!r}")
         return {"contract_id": cid, "events": events}
 
-    exact: Dict[str, Callable] = {"/api/status": status, "/api/gdp": gdp, "/api/metrics": metrics, "/api/accounts/top": top}
+    def sut(q, _p):
+        from .accounts import from_index
+        from .index import IndexError_
+        i = idx()
+        try:
+            return from_index(i, _int(q, "from", 1), _int(q, "to", i.height)).to_dict()
+        except IndexError_ as err:
+            raise LookupError(str(err)) from None
+
+    exact: Dict[str, Callable] = {"/api/status": status, "/api/gdp": gdp, "/api/metrics": metrics, "/api/accounts/top": top,
+                                  "/api/sut": sut}
     prefix: Tuple[Tuple[str, Callable], ...] = (("/api/account/", account), ("/api/contract/", contract))
 
     class Handler(BaseHTTPRequestHandler):

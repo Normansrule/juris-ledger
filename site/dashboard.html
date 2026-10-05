@@ -25,6 +25,24 @@
 .live i{width:.55rem;height:.55rem;border-radius:50%;background:var(--rule)}
 .live.on i{background:var(--verified);animation:pulse 1.4s infinite}
 @keyframes pulse{50%{opacity:.3}}
+.sut-wrap{overflow-x:auto}
+table.sut{border-collapse:separate;border-spacing:3px;font-size:.84rem;font-variant-numeric:tabular-nums;min-width:46rem;width:100%}
+table.sut th{font-weight:600;color:var(--ink-2);text-align:right;padding:.25rem .4rem;white-space:nowrap}
+table.sut th.row{text-align:left;color:var(--ink)}
+table.sut td{text-align:right;padding:.35rem .45rem;border-radius:5px;white-space:nowrap}
+table.sut tr.sep td,table.sut tr.sep th{box-shadow:0 -2px 0 var(--rule);padding-top:.55rem}
+table.sut .ok{color:var(--verified);font-weight:600}
+.whatif{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:1.2rem;align-items:start}
+@media (max-width:760px){.whatif{grid-template-columns:1fr}}
+.whatif label{display:block;font-size:.9rem;color:var(--ink-2);margin:.5rem 0 .2rem}
+.whatif select{width:100%;font:inherit;padding:.45rem .5rem;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--ink)}
+.whatif input[type=range]{width:100%;accent-color:var(--verified)}
+.hbar{display:grid;grid-template-columns:8.5rem 1fr 7rem;gap:.6rem;align-items:center;margin:.45rem 0;font-size:.9rem}
+.hbar .track{height:1.1rem;background:var(--wash);border-radius:4px;overflow:hidden}
+.hbar .fill{height:100%;background:var(--verified);border-radius:4px;transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.hbar .fill.direct{background:var(--amber)}
+.hbar .n{text-align:right;font-variant-numeric:tabular-nums}
+.bigfig{font-family:var(--serif);font-size:2rem;line-height:1.1}
 table.top{width:100%;border-collapse:collapse;font-size:.92rem;font-variant-numeric:tabular-nums}
 table.top td,table.top th{padding:.45rem .5rem;border-bottom:1px solid var(--rule);text-align:left}
 table.top td.n,table.top th.n{text-align:right}
@@ -61,6 +79,26 @@ table.top td.n,table.top th.n{text-align:right}
     <section class="chart"><h2>GDP, accumulating</h2><p>C + I + G + X − M summed from block 1, exactly as <code>jurisledger query gdp</code> computes it.</p><canvas id="cGdp" role="img" aria-label="chart"></canvas></section>
     <section class="chart"><h2>Consensus health</h2><p>Validator signatures on each block (bars) and extra voting rounds needed (dots). Rounds above zero mean a proposer was slow or the network was delayed.</p><canvas id="cHealth" role="img" aria-label="chart"></canvas></section>
   </div>
+
+  <section class="chart" style="margin-top:1rem" id="sutPanel" hidden>
+    <h2>Who supplies whom</h2>
+    <p>The use table a statistics office builds, here read straight from the ledger: each row is a product, each column who used it — industries as inputs, then households (C), investment (I), government (G) and exports (X). Below the line, each industry's value added. Darker means more money.</p>
+    <div class="sut-wrap"><table class="sut" id="sut" aria-label="Use table"></table></div>
+    <p id="sutCheck" style="margin-top:.6rem"></p>
+  </section>
+
+  <section class="chart" style="margin-top:1rem" id="whatifPanel" hidden>
+    <h2>What if demand rises?</h2>
+    <p>The Leontief inverse, computed from the table above: buying more of one product makes its producers buy inputs, whose producers buy inputs, and so on. The bars are the extra output each industry needs in total.</p>
+    <div class="whatif">
+      <div>
+        <label for="wiProduct">More final demand for</label><select id="wiProduct"></select>
+        <label for="wiAmount">Amount: <strong id="wiAmountLabel"></strong></label><input type="range" id="wiAmount" min="0" max="1000000" step="10000" value="500000">
+        <div style="margin-top:1rem"><div class="bigfig" id="wiTotal">—</div><div style="color:var(--ink-2);font-size:.9rem" id="wiMult"></div></div>
+      </div>
+      <div id="wiBars" aria-live="polite"></div>
+    </div>
+  </section>
 
   <section class="chart" style="margin-top:1rem"><h2>Busiest accounts</h2><p>By public money paid plus received.</p><table class="top" id="top"></table></section>
   <p class="note" style="font-size:.88rem;color:var(--ink-2);margin-top:1rem">Everything here is derived from the index, which is built only from audited blocks. Hidden (confidential) payment amounts are not in it; their count per block is.</p>
@@ -170,8 +208,43 @@ function describe() {                      // text for screen readers: the chart
   $("#cGdp").setAttribute("aria-label", `GDP accumulating from 0 to ${money(g)} over ${rows.length} blocks.`);
   $("#cHealth").setAttribute("aria-label", `Validator signatures per block; ${slow} of ${rows.length} blocks needed extra voting rounds.`);
 }
+
+// ---------- supply and use, and the Leontief what-if
+let sut = null;
+function renderSut(t) {
+  sut = t;
+  if (!t) { $("#sutPanel").hidden = $("#whatifPanel").hidden = true; return; }
+  $("#sutPanel").hidden = $("#whatifPanel").hidden = false;
+  const cols = [...t.industries, ...t.final_columns], cells = t.products.map((p, r) => [...t.use[r], ...t.final[r]]);
+  const max = Math.max(1, ...cells.flat()), money0 = c => c ? compact(c) : "·";
+  const shade = v => { const a = v ? 6 + 49 * Math.sqrt(v / max) : 0; return { bg: `color-mix(in srgb, var(--verified) ${a.toFixed(0)}%, var(--sheet))` }; };   // capped so text stays readable in both themes
+  const head = `<tr><th></th>${t.industries.map(i => `<th scope="col">${i}</th>`).join("")}${t.final_columns.map(f => `<th scope="col">${f}</th>`).join("")}<th scope="col">supply = use</th></tr>`;
+  const body = t.products.map((p, r) => `<tr><th scope="row" class="row">${p}</th>${cells[r].map((v, c) =>
+    { const s = shade(v); return `<td style="background:${s.bg}" title="${p} used by ${cols[c]}: ${money(v)}">${money0(v)}</td>`; }).join("")}
+    <td class="${t.imbalances[p] === 0 ? "ok" : "bad"}">${t.imbalances[p] === 0 ? "✓ " + compact(t.supply[p]) : "off by " + money(t.imbalances[p])}</td></tr>`).join("");
+  const va = Object.entries(t.value_added).map(([k, vals], n) => `<tr class="${n === 0 ? "sep" : ""}"><th scope="row" class="row">${k}</th>${vals.map(v => `<td>${money0(v)}</td>`).join("")}${"<td></td>".repeat(t.final_columns.length + 1)}</tr>`).join("");
+  const out = `<tr><th scope="row" class="row">output</th>${t.output.map(v => `<td><strong>${money0(v)}</strong></td>`).join("")}${"<td></td>".repeat(t.final_columns.length + 1)}</tr>`;
+  $("#sut").innerHTML = head + body + va + out;
+  const g = t.gdp, same = g.production === g.expenditure && g.expenditure === g.income;
+  $("#sutCheck").innerHTML = `<span class="${same ? "ok" : "bad"}">${same ? "✓" : "✗"}</span> GDP ${money(g.expenditure)} three ways — production, expenditure and income agree to the cent; every product's supply equals its use, so there is no statistical discrepancy to publish.`;
+  const sel = $("#wiProduct"), keep = sel.value;
+  sel.innerHTML = t.leontief.industries.filter(i => i !== "government").map(i => `<option value="${i}">${i}</option>`).join("");
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  whatIf();
+}
+function whatIf() {
+  if (!sut) return;
+  const L = sut.leontief, inds = L.industries, c = inds.indexOf($("#wiProduct").value), amt = +$("#wiAmount").value * 100;
+  $("#wiAmountLabel").textContent = money(amt);
+  const extra = inds.map((_, r) => L.matrix[r][c] * amt), max = Math.max(1, ...extra), total = extra.reduce((a, b) => a + b, 0);
+  $("#wiBars").innerHTML = inds.map((ind, r) => `<div class="hbar"><span>${ind}</span><div class="track"><div class="fill ${r === c ? "direct" : ""}" style="width:${(extra[r] / max * 100).toFixed(1)}%"></div></div><span class="n">${money(extra[r])}</span></div>`).join("");
+  $("#wiTotal").textContent = money(total);
+  $("#wiMult").textContent = `of output across the economy: ${(total / Math.max(amt, 1)).toFixed(3)} for every 1.00 of demand (the output multiplier). Amber: the product itself; teal: the supply chain behind it.`;
+  $("#wiBars").setAttribute("aria-label", `Extra output: ${inds.map((ind, r) => `${ind} ${money(extra[r])}`).join(", ")}`);
+}
+$("#wiProduct").onchange = whatIf; $("#wiAmount").oninput = whatIf;
 function show(data, label) {
-  rows = data.rows || []; kpis(data.status || {}, rows); build(); describe();
+  rows = data.rows || []; kpis(data.status || {}, rows); build(); describe(); renderSut(data.sut || null);
   $("#top").innerHTML = "<tr><th>account</th><th>role</th><th class='n'>paid</th><th class='n'>received</th></tr>" +
     (data.top || []).map(a => `<tr><td>${String(a.name).replace(/</g, "&lt;")}</td><td>${a.role}</td><td class="n">${money(a.paid)}</td><td class="n">${money(a.received)}</td></tr>`).join("");
   $("#cap").textContent = label;
@@ -182,10 +255,11 @@ function parseCsv(text) {
 }
 async function poll(base) {
   try {
-    const [st, m, top] = await Promise.all([fetch(base + "/api/status").then(r => r.json()),
-      fetch(base + "/api/metrics?from=1&to=100000000").then(r => r.json()), fetch(base + "/api/accounts/top?n=8").then(r => r.json())]);
+    const [st, m, top, sutLive] = await Promise.all([fetch(base + "/api/status").then(r => r.json()),
+      fetch(base + "/api/metrics?from=1&to=100000000").then(r => r.json()), fetch(base + "/api/accounts/top?n=8").then(r => r.json()),
+      fetch(base + "/api/sut").then(r => r.ok ? r.json() : null).catch(() => null)]);
     const grew = m.rows.length !== rows.length;
-    if (grew) show({ status: st, rows: m.rows, top: top.accounts }, `Live from ${base}: ${st.chain_id}, block ${st.height}. Refreshing every five seconds.`);
+    if (grew) show({ status: st, rows: m.rows, top: top.accounts, sut: sutLive }, `Live from ${base}: ${st.chain_id}, block ${st.height}. Refreshing every five seconds.`);
     $("#live").classList.add("on"); $("#liveText").textContent = `live · block ${st.height}`;
   } catch (e) {
     $("#live").classList.remove("on"); $("#liveText").textContent = "cannot reach the API";

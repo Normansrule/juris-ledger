@@ -51,7 +51,7 @@ python -m jurisledger all
 === Confidential payments with range proofs on the real ledger ===
   [PASS] a negative hidden amount (money printing) is rejected
   ...
-ALL CHECKS PASSED          (112 claims)
+ALL CHECKS PASSED          (122 claims)
 ```
 
 > **Status:** research prototype, version 0.23. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
@@ -141,8 +141,8 @@ jurisledger audit demo/chain.json  # re-verify the whole ledger from its foundin
 jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
-jurisledger all                    # run all twelve experiments (112 claims)
-python -m pytest                   # 179 tests; every printed claim is also asserted
+jurisledger all                    # run all thirteen experiments (122 claims)
+python -m pytest                   # 185 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -156,7 +156,7 @@ The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed2
 | Anyone with a ledger export | open the [explorer](https://normansrule.github.io/juris-ledger/explorer.html) and drop `chain.json` | Every block's links, Merkle root, signatures and certificate checked in the browser as the chain animates in; blocks, transactions in plain sentences, one account followed across blocks, GDP up to any block, the four fraud detectors with ring diagrams, and a **3D view**: the chain as a tower of blocks with validators orbiting it, and money flowing between every account |
 | A lawyer, arbitrator or auditor | `jurisledger verify evidence.json validators.json`, or drop the file on the explainer's step 8 — nothing is uploaded | A plain-language verdict on one contract — who signed, what was paid and when, what the arbitrator decided — checked offline against validator keys *you* supply. Exit code 0 or 1, so it scripts |
 | A person paying or being paid | `jurisledger wallet new / register / balance / pay HOST:PORT` | A command-line wallet: amounts in ordinary units, nonce fetched from the node, waits for finality, plain-language errors |
-| A statistics office or dashboard | `jurisledger index`, `query`, `metrics`, `api`; the [dashboard](https://normansrule.github.io/juris-ledger/dashboard.html) | A SQLite index built incrementally from verified blocks: GDP for any block range in a fraction of a millisecond, account histories, contract timelines, a per-block time series; a rate-limited read-only JSON API that can follow a live validator; and a dashboard of activity, spending mix, GDP and consensus health. See [`docs/DATA.md`](docs/DATA.md) |
+| A statistics office or dashboard | `jurisledger index`, `query`, `metrics`, `api`; the [dashboard](https://normansrule.github.io/juris-ledger/dashboard.html) | A SQLite index built incrementally from verified blocks: GDP for any block range in a fraction of a millisecond, account histories, contract timelines, a per-block time series; a rate-limited read-only JSON API that can follow a live validator; and a dashboard of activity, spending mix, GDP, consensus health, the supply and use table as a heatmap, and a what-if of how demand ripples through the economy. See [`docs/DATA.md`](docs/DATA.md) |
 | An operator | `jurisledger init`, `jurisledger node …`, `jurisledger status HOST:PORT`, `jurisledger snapshot` | One validator process per machine, listening on a port, storing blocks on disk; `jurisledger cluster` shows the whole choreography on one machine first |
 | A statistics office, regulator or rival validator | `jurisledger audit chain.json` | The entire ledger replayed from its founding record: every signature, Merkle root, state digest and commit certificate |
 
@@ -373,6 +373,7 @@ jurisledger/
   deploy.py        multi-machine deployment files (genesis, peers, per-machine key folders)
   vault.py         threshold-encrypted contract vault: AES-256-GCM text, Shamir k-of-n key, receipt-gated custodians
   keystore.py      key files sealed with a passphrase (scrypt + AES-256-GCM)
+  accounts.py      supply and use tables, value added by industry, Leontief inverse in exact arithmetic
   index.py         incremental SQLite index: queries and per-block metrics
   api.py           read-only, rate-limited JSON API over the index; can follow a live validator
   fuzz.py          invariant fuzzing: random attacks, eight properties checked after every transaction
@@ -397,8 +398,8 @@ assets/banner.svg  animated README banner
   demo.py          sample ledger + evidence file + register, for first contact
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
-  experiments.py   the twelve experiments; every claim is a checked boolean
-tests/             179 tests
+  experiments.py   the thirteen experiments; every claim is a checked boolean
+tests/             185 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```

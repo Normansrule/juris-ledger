@@ -18,6 +18,7 @@
   jurisledger index CHAIN.json|HOST:PORT [-o ledger.db]   audit, then add new blocks to a SQLite index
   jurisledger query ledger.db gdp [FROM TO] | account NAME | top | contract ID
   jurisledger metrics ledger.db [-o metrics.csv]         per-block time series for dashboards
+  jurisledger sut CHAIN.json|ledger.db [FROM TO] [-o DIR] supply and use tables, Leontief multipliers (CSV with -o)
   jurisledger api ledger.db [--port 8080] [--follow HOST:PORT --every 10]
                                           read-only JSON API over the index (feeds site/dashboard.html)
   jurisledger fuzz [--runs N --steps M --seed S]   random attacks on the state machine, eight invariants checked
@@ -54,6 +55,7 @@ TITLES = {
     "privacy": "Commitments and differentially private statistics (experimental)",
     "confidential": "Confidential payments with range proofs on the real ledger",
     "vault": "Threshold-encrypted contract vault: no single holder can read",
+    "accounts": "Supply and use tables and input-output analysis from the ledger",
 }
 
 
@@ -349,6 +351,22 @@ def main(argv: list[str]) -> int:
             pass
         finally:
             stop.set(); server.server_close()
+        return 0
+    if cmd == "sut" and args.paths:
+        from . import accounts as A
+        from .index import Index, IndexError_
+        src, rng = args.paths[0], [int(x) for x in args.paths[1:3]]
+        try:
+            if src.endswith(".db"):
+                t = A.from_index(Index(src), *rng)
+            else:
+                t = A.from_chain(Chain.load(Path(src).read_text()), *rng)
+        except (IndexError_, InvalidBlock, OSError, ValueError) as err:
+            print(f"REFUSED. {err}"); return 1
+        print(A.render(t))
+        if args.out:
+            for f in t.write_csv(args.out):
+                print(f"wrote {f}")
         return 0
     if cmd == "metrics" and len(args.paths) == 1:
         from .index import Index

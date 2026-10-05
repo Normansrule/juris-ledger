@@ -8,7 +8,7 @@
 | 3 (framework done in 0.5) | Identity: attestations from several independent issuers, key rotation and recovery. Remaining: real credential formats, issuer liability rules | `identity` passes (done); a pilot issuer integrates a real credential check (to do) |
 | 4 (done in 0.8, heavy) | Confidential amounts with range proofs. Remaining: Bulletproofs, encrypted notes, hidden counterparties | `confidential` passes (done); proofs under 1 kB (to do) |
 | 5 (done in 0.23) | Threshold-encrypted contract vault. Remaining: re-sharing when custodians change | `vault` passes: a host that leaks ciphertext leaks nothing, k-1 custodians learn nothing (done) |
-| 6 | Pilot on synthetic data from a real national-accounts framework (supply–use tables) | Published tables are reproduced from a generated ledger |
+| 6 (tables done in 0.24) | Supply and use tables and input-output analysis from the ledger. Remaining: a pilot against a real office's published tables | `accounts` passes: tables balance, GDP three ways equals ground truth, Leontief reproduces output exactly (done); published tables reproduced from a generated ledger (to do) |
 | 7 | Legal and governance review with practitioners | Written opinions on evidentiary status and data-protection compatibility |
 
 Non-goals: a cryptocurrency, a token sale, or replacing courts. The ledger records agreements; people and institutions still interpret and enforce them.

@@ -26,7 +26,7 @@ from . import state as S
 from . import tx as T
 from .chain import Chain
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2          # 2: payments.tax_type (needed by the supply and use tables)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS accounts (address TEXT PRIMARY KEY, name TEXT, role TEXT, sector TEXT,
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS txs (txid TEXT PRIMARY KEY, height INTEGER NOT NULL, 
                                 kind TEXT NOT NULL, sender TEXT NOT NULL, nonce INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS payments (txid TEXT PRIMARY KEY, height INTEGER NOT NULL, payer TEXT NOT NULL,
                                      payee TEXT NOT NULL, amount INTEGER NOT NULL, purpose TEXT NOT NULL,
-                                     contract TEXT, obligation TEXT, invoice TEXT);
+                                     contract TEXT, obligation TEXT, invoice TEXT, tax_type TEXT);
 CREATE TABLE IF NOT EXISTS contract_events (txid TEXT PRIMARY KEY, contract_id TEXT NOT NULL, kind TEXT NOT NULL,
                                             actor TEXT NOT NULL, height INTEGER NOT NULL, detail TEXT);
 CREATE TABLE IF NOT EXISTS block_metrics (height INTEGER PRIMARY KEY, n_tx INTEGER, n_payments INTEGER,
@@ -65,6 +65,18 @@ class Index:
         self.db.execute("PRAGMA journal_mode=WAL")          # readers never block the writer
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.executescript(SCHEMA)
+        self.outdated = not self.has_column("payments", "tax_type")   # built by an older version
+
+    def has_column(self, table: str, column: str) -> bool:
+        return any(r[1] == column for r in self.db.execute(f"PRAGMA table_info({table})"))
+
+    def _rebuild(self) -> None:
+        """The index is derived data: an older layout is simply rebuilt from the chain."""
+        with self.db:
+            for t in ("meta", "accounts", "blocks", "txs", "payments", "contract_events", "block_metrics"):
+                self.db.execute(f"DROP TABLE IF EXISTS {t}")
+        self.db.executescript(SCHEMA)
+        self.outdated = False
 
     def close(self) -> None:
         self.db.close()
@@ -87,6 +99,9 @@ class Index:
         """Append every block of ``chain`` not yet indexed.  ``chain`` must already be audited
         (Chain.load / Chain.audit / a running node's chain)."""
         t0 = time.perf_counter()
+        rebuilt = self.outdated
+        if self.outdated:
+            self._rebuild()
         cid, gh = self.meta("chain_id"), self.meta("genesis_hash")
         if cid is None:
             with self.db:
@@ -120,7 +135,7 @@ class Index:
                 tx_added += len(b.txs)
         dt = time.perf_counter() - t0
         return {"blocks_added": added, "transactions_added": tx_added, "height": self.height, "seconds": dt,
-                "tx_per_second": tx_added / dt if dt and tx_added else 0.0}
+                "tx_per_second": tx_added / dt if dt and tx_added else 0.0, "rebuilt": rebuilt}
 
     def _add_block(self, b) -> None:
         h = b.header
@@ -140,9 +155,9 @@ class Index:
                     self.db.execute("INSERT OR IGNORE INTO accounts VALUES (?,?,?,?,NULL,?)", (p["new_key"], *row, h.height))
                     self.db.execute("UPDATE accounts SET successor=? WHERE address=?", (p["new_key"], old))
             elif t.kind == T.PAYMENT:
-                self.db.execute("INSERT INTO payments VALUES (?,?,?,?,?,?,?,?,?)",
+                self.db.execute("INSERT INTO payments VALUES (?,?,?,?,?,?,?,?,?,?)",
                                 (txid, h.height, t.sender, p["to"], p["amount"], p["purpose"], p.get("contract"),
-                                 p.get("obligation"), p.get("invoice")))
+                                 p.get("obligation"), p.get("invoice"), p.get("tax_type")))
                 m["n_payments"] += 1
                 m["volume"] += p["amount"]
                 self._accounts_add(m, t.sender, p)

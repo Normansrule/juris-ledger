@@ -32,6 +32,26 @@ Catalini and Gans describe these as reductions in the **cost of verification** a
 
 **Why the two approaches must agree.** Write purchases from resident firms with subscript *d* and from non-residents with *m*. Firm output is C_d + I_d + G_d + INT_d + X. Intermediate consumption is INT_d + INT_m. Value added is therefore C_d + I_d + G_d + X − INT_m. Expenditure is (C_d + C_m) + (I_d + I_m) + (G_d + G_m) + X − (C_m + I_m + G_m + INT_m), which is the same expression. Government wages appear on both sides. Any non-zero discrepancy on the ledger means a payment was tagged inconsistently.
 
+## Supply and use tables, and input-output analysis
+
+`jurisledger sut` (and `/api/sut`, and the dashboard's *Who supplies whom* and *What if demand rises?* panels) builds the tables a statistics office publishes behind its GDP figure (System of National Accounts 2008, chapter 14; Eurostat *Manual of Supply, Use and Input-Output Tables*, 2008):
+
+| piece | read from the ledger as |
+|---|---|
+| a product | the sector of the firm paid; anything bought from a non-resident is "imports"; government output is "government services" |
+| supply of a product | goods payments to firms of that sector (domestic output), or to non-residents (imports) |
+| intermediate use | `INTERMEDIATE` payments: row = product bought, column = buyer's sector |
+| final use | `FINAL_CONSUMPTION` (C), `INVESTMENT` (I), `GOVERNMENT_PURCHASE` plus government wages (G), `EXPORT` (X) |
+| compensation of employees | `WAGES`, by the payer's sector (government; banks as "financial, not measured") |
+| net taxes on production | `TAX` with `tax_type: production` paid by firms, minus `TRANSFER`s to firms |
+| operating surplus | the residual, as in official practice |
+
+Two identities must hold: supply equals use for every product, and output equals intermediate consumption plus value added for every industry. Statistics offices take months to balance the two sides, because they come from different sources, and publish what is left over as the statistical discrepancy. Here both come from the same validated payments, so they balance exactly, product by product.
+
+That is a property of the method, not proof of completeness: with 30% of trade in cash the tables still balance perfectly while GDP falls short of the truth (`jurisledger accounts`, last claim). Balance shows consistency; coverage has to be estimated separately.
+
+The Leontief inverse L = (I − A)⁻¹, with A the domestic intermediate use per unit of each industry's output, is computed in exact rational arithmetic, so the check that L times final demand gives back observed output is an equality. Column sums of L are output multipliers: how much output across the economy one more unit of final demand for a product requires. They describe the past structure of the economy; using them for forecasts assumes fixed input proportions and no capacity limits, the standard caveats of input-output analysis.
+
 ## Simplifications in this version
 
 - No change in inventories, no consumption of fixed capital (so this is *gross* product only), no imputed rent of owner-occupiers, no financial intermediation services indirectly measured, no non-profit sector.

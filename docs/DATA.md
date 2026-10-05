@@ -11,6 +11,7 @@ jurisledger query ledger.db account agriculture-firm-1   # one account's payment
 jurisledger query ledger.db top 10                       # the ten busiest accounts
 jurisledger query ledger.db contract <contract id>       # a contract's whole life
 jurisledger metrics ledger.db -o metrics.csv             # one row per block, for any dashboard
+jurisledger sut ledger.db -o tables/                     # supply.csv, use.csv, leontief.csv
 ```
 
 ## Serving it: the read-only API and the dashboard
@@ -28,6 +29,7 @@ jurisledger api ledger.db --follow 127.0.0.1:7701 --every 10  # and keep indexin
 | `/api/accounts/top?n=10` | busiest accounts |
 | `/api/account/<name or address>` | an account's latest payments |
 | `/api/contract/<id>` | a contract's timeline |
+| `/api/sut?from=A&to=B` | supply and use tables, value added by industry, Leontief inverse and multipliers |
 
 The server is read-only (SQLite opened in read-only mode; POST, PUT, DELETE answer 405), serves public data only, parses every parameter as a bounded integer or an exact-match lookup through bound SQL parameters, caps result sizes, rate-limits each client address with a token bucket (429 beyond it), and listens on loopback unless told otherwise. `--follow` exports from a validator over pinned TLS, re-audits the export locally and appends new blocks, so the dashboard stays live.
 

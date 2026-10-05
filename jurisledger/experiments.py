@@ -1008,7 +1008,64 @@ def exp_vault(verbose: bool = True) -> Dict[str, Any]:
     return {"checks": checks}
 
 
+# --------------------------------------------------------------------------- #
+def exp_accounts(verbose: bool = True) -> Dict[str, Any]:
+    """Supply and use tables and input-output analysis, read straight from the ledger."""
+    import tempfile
+    from fractions import Fraction
+    from . import accounts as A
+    from .index import Index
+    res = run_simulation(SimConfig())
+    chain, truth = res.chain, res.economy.truth
+    t = A.from_chain(chain)
+    checks: List[Check] = []
+    checks.append(("supply equals use for every product: no statistical discrepancy to publish",
+                   all(v == 0 for v in t.product_imbalances().values())))
+    rep = gdp(chain)
+    checks.append(("GDP from the tables is the same three ways, equals the headline figure and the ground truth",
+                   t.gdp_production == t.gdp_expenditure == t.gdp_income == rep.expenditure == truth.gdp))
+    checks.append(("final-use columns C, I, G, X and imports each equal the ground truth",
+                   [t.final_total(f) for f in A.FINAL] + [t.imports] == [truth.C, truth.I, truth.G, truth.X, truth.M]))
+    acc, by_sector = chain.state.accounts, {}
+    for a, v in truth.output.items():
+        by_sector[acc[a]["sector"]] = by_sector.get(acc[a]["sector"], 0) + v
+    checks.append(("every industry's output equals the simulation's independently recorded output",
+                   all(t.output.get(k, 0) == v for k, v in by_sector.items()) and set(by_sector) <= set(t.industries)))
+    L, f = t.leontief(), t.final_domestic()
+    x = [sum(L[r][c] * f[c] for c in range(len(L))) for r in range(len(L))]
+    checks.append(("the Leontief inverse times final demand reproduces observed output exactly (rational arithmetic)",
+                   all(v == Fraction(t.output[i]) for v, i in zip(x, t.domestic()))))
+    mult = t.multipliers()
+    checks.append(("every output multiplier is at least 1, and exactly 1 for an industry that buys no inputs",
+                   all(v >= 1 for v in mult.values()) and mult["government"] == 1.0))
+    with tempfile.TemporaryDirectory() as d:
+        idx = Index(f"{d}/l.db")
+        idx.sync(chain)
+        same = A.from_index(idx).to_dict() == t.to_dict()
+        idx.close()
+    checks.append(("tables built from the SQL index are identical to tables replayed from the chain", same))
+    parts = [A.from_chain(chain, a, b) for a, b in res.period_blocks]
+    add = all(sum(p.use.get(k, 0) for p in parts) == v for k, v in t.use.items()) and \
+        all(sum(p.final.get(k, 0) for p in parts) == v for k, v in t.final.items())
+    checks.append(("the period tables add up exactly to the tables for the whole ledger", add))
+    cash = run_simulation(SimConfig(offledger_share=0.3, periods=3))
+    tc = A.from_chain(cash.chain)
+    checks.append(("honesty check: with 30% of trade in cash the tables still balance, yet GDP falls short of the truth",
+                   all(v == 0 for v in tc.product_imbalances().values()) and tc.gdp_expenditure < cash.economy.truth.gdp))
+    extra = t.what_if({"construction": 1_000_000_00})
+    checks.append(("a 1,000,000 rise in demand for construction raises output in every sector that supplies it",
+                   extra["construction"] >= 1_000_000_00 and all(extra[i] > 0 for i in t.domestic() if i != "government")))
+    if verbose:
+        print(A.render(t))
+        print("\n  what if final demand for construction rises by 1,000,000.00? extra output needed:")
+        for i, v in extra.items():
+            print(f"    {i:<16}{v / 100:>16,.2f}")
+        print(f"  with 30% of trade in cash: tables balance, ledger GDP {tc.gdp_expenditure / 100:,.2f} "
+              f"vs true {cash.economy.truth.gdp / 100:,.2f} ({tc.gdp_expenditure / cash.economy.truth.gdp:.1%} captured)")
+    return {"checks": checks, "tables": t.to_dict()}
+
+
 EXPERIMENTS: Dict[str, Callable[..., Dict[str, Any]]] = {
     "contracts": exp_contracts, "legal": exp_legal, "disputes": exp_disputes, "identity": exp_identity, "attacks": exp_attacks, "asynchrony": exp_asynchrony, "integration": exp_integration, "gdp": exp_gdp,
-    "fraud": exp_fraud, "privacy": exp_privacy, "confidential": exp_confidential, "vault": exp_vault,
+    "fraud": exp_fraud, "privacy": exp_privacy, "confidential": exp_confidential, "vault": exp_vault, "accounts": exp_accounts,
 }
