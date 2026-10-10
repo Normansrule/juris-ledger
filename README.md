@@ -31,7 +31,7 @@ The [explainer site](https://normansrule.github.io/juris-ledger/) (one self-cont
 | 7. Fraud, found | Inject a round-tripping ring and run the detector | `jurisledger fraud` |
 | 8. Settle a dispute | Move time forward, pay or miss rent, open a dispute, issue an award — and try to make the arbitrator double the debt or touch rent nobody disputed | `jurisledger disputes` |
 | 9. Prove it to a court | Drop a real evidence file and verify every signature, certificate and Merkle path in the browser; then try four ways to cheat | `jurisledger verify`, `tests/test_site_verifier.py` |
-| 10. Lock the text away | A restricted contract encrypted in the page with a key split 3-of-5 among custodians; record a receipt and read it, take custodians offline, make one lie, steal the file, let two collude | `jurisledger vault`, `tests/test_vault.py` |
+| 10. Lock the text away | A restricted contract encrypted in the page with a key split 3-of-5 among custodians; record a receipt and read it, take custodians offline, make one lie, steal the file, let two collude, replace a custodian without rebuilding the key | `jurisledger vault`, `tests/test_vault.py` |
 
 Everything claimed in this README is backed by an experiment you can run in about half a minute:
 
@@ -51,7 +51,7 @@ python -m jurisledger all
 === Confidential payments with range proofs on the real ledger ===
   [PASS] a negative hidden amount (money printing) is rejected
   ...
-ALL CHECKS PASSED          (122 claims)
+ALL CHECKS PASSED          (127 claims)
 ```
 
 > **Status:** research prototype, version 0.23. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
@@ -141,8 +141,8 @@ jurisledger audit demo/chain.json  # re-verify the whole ledger from its foundin
 jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
-jurisledger all                    # run all thirteen experiments (122 claims)
-python -m pytest                   # 185 tests; every printed claim is also asserted
+jurisledger all                    # run all thirteen experiments (127 claims)
+python -m pytest                   # 189 tests; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -371,7 +371,8 @@ jurisledger/
   cluster.py       launches N node processes locally and exercises them (pay, kill, rejoin)
   wallet.py        command-line wallet against a running validator
   deploy.py        multi-machine deployment files (genesis, peers, per-machine key folders)
-  vault.py         threshold-encrypted contract vault: AES-256-GCM text, Shamir k-of-n key, receipt-gated custodians
+  vault.py         threshold-encrypted contract vault: AES-256-GCM text, Shamir k-of-n key with Feldman
+                   commitments, receipt-gated custodians, proactive re-sharing to new custodians
   keystore.py      key files sealed with a passphrase (scrypt + AES-256-GCM)
   accounts.py      supply and use tables, value added by industry, Leontief inverse in exact arithmetic
   index.py         incremental SQLite index: queries and per-block metrics
@@ -399,7 +400,7 @@ assets/banner.svg  animated README banner
   bench.py         honest performance numbers
   sim.py           synthetic economy with independent ground truth
   experiments.py   the thirteen experiments; every claim is a checked boolean
-tests/             185 tests
+tests/             189 tests
 docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
 examples/          quickstart.py
 ```

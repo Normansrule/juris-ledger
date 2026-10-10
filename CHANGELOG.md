@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.25.0 — verifiable shares and custodian rotation
+- Vault format 2: the secret is a scalar on Ed25519 and the dealer publishes commitments to the sharing polynomial (Feldman's verifiable secret sharing), so anyone can check a piece without any per-piece table; the AES key is derived from the secret. Version-1 files still open.
+- Proactive re-sharing (`vault.reshare`): custodians leave and join and the threshold changes (3 of 5 to 4 of 6) while the text's key is never rebuilt and the ciphertext is never re-encrypted. Each contribution is checked publicly against the sender's committed share; each sub-share is checked by its recipient; saboteurs are identified and dropped; with too few honest contributors nothing changes. Shares carry an epoch, so an old piece is refused with a new file and decrypts nothing mixed with new pieces.
+- `jurisledger vault`: five more claims (16 in all, 127 total), including the honest limit that retired custodians who keep their old pieces can still decrypt the old copy together.
+- Explainer step 10: "Replace a custodian" re-shares in the page and shows the old piece becoming useless.
+- 189 tests.
+
 ## 0.24.0 — supply and use tables
 - `accounts.py` and `jurisledger sut CHAIN.json|ledger.db [FROM TO] [-o DIR]`: the supply and use tables behind GDP, read from validated payments — products by industry and by final use (C, I, G, X), value added by industry (compensation, net taxes on production, operating surplus), supply = use checked for every product, and the Leontief inverse with output multipliers in exact rational arithmetic. CSV export.
 - `jurisledger accounts`: the thirteenth experiment, ten claims (exact balance, GDP three ways equals the truth, each industry's output equals the truth, Leontief reproduces output exactly, index and chain agree, periods add up, and the honest limit: with 30% cash the tables still balance while GDP falls short). 122 claims in all. Roadmap phase 6.

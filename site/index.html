@@ -245,6 +245,7 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
         <button class="btn" id="vAsk">Ask the custodians</button>
         <button class="btn ghost" id="vSteal">Steal the sealed file</button>
         <button class="btn ghost" id="vCollude">Two custodians collude</button>
+        <button class="btn ghost" id="vRotate">Replace a custodian</button>
         <button class="btn ghost" id="vReset">Start over</button>
       </div>
       <p style="font-size:.88rem;color:var(--ink-2);margin:.3rem 0 0">Click a custodian to take it offline, or to make it lie.</p>
@@ -253,7 +254,7 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
       <div class="verdict" id="vVerdict">Sealed</div>
       <pre class="tx" id="vText" style="background:var(--wash);border-radius:8px;padding:.7rem;font-size:.8rem;white-space:pre-wrap;word-break:break-all;min-height:6rem;margin:.4rem 0"></pre>
       <div class="caption" id="vCap"></div>
-      <p style="font-size:.9rem">In the repository: <code>jurisledger vault</code> checks eleven claims, including that a custodian handing back a forged piece is caught, and that one receipt buys exactly one read.</p>
+      <p style="font-size:.9rem">In the repository: <code>jurisledger vault</code> checks sixteen claims, including that a custodian handing back a forged piece is caught by public commitments, that one receipt buys exactly one read, and that custodians can be replaced and the threshold changed without the key ever being rebuilt.</p>
     </div>
   </div>
 </section>
@@ -624,7 +625,8 @@ const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++)
 (async function vaultDemo() {
   const svg = $("#vSvg"); if (!svg || !crypto.subtle) return;
   const P = (1n << 521n) - 1n, N = 5, K = 3, TEXT = "COLD-STORAGE LEASE\nRent 12,000.00 per period, due by block 5 of each period. Disputes go to bank-0 as arbitrator.";
-  const NAMES = ["validator 0", "validator 1", "validator 2", "court registry", "statistics office"];
+  const BASE_NAMES = ["validator 0", "validator 1", "validator 2", "court registry", "statistics office"];
+  let NAMES = BASE_NAMES.slice(), retired = null, rotations = 0;
   const enc = new TextEncoder(), dec = new TextDecoder();
   const mod = a => ((a % P) + P) % P;
   const pow = (b, e) => { let r = 1n; b = mod(b); while (e > 0n) { if (e & 1n) r = r * b % P; b = b * b % P; e >>= 1n; } return r; };
@@ -644,6 +646,7 @@ const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++)
     const secret = raw.reduce((a, x) => (a << 8n) | BigInt(x), 0n), coeffs = [secret, rand(), rand()];
     shares = Array.from({ length: N }, (_, i) => { const x = BigInt(i + 1); return [x, coeffs.reduce((acc, c, j) => mod(acc + c * pow(x, BigInt(j))), 0n)]; });
     state = { receipts: 0, mode: Array(N).fill("ok"), flying: [] };
+    NAMES = BASE_NAMES.slice(); retired = null; rotations = 0;
   }
   async function tryOpen(sh) {
     try {
@@ -705,6 +708,24 @@ const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++)
   $("#vSteal").onclick = async () => {
     const guess = await tryOpen([[1n, rand()], [2n, rand()], [3n, rand()]]);
     show("Nothing", "bad", hex(ct).slice(0, 192) + "…", `Someone copies the sealed file and the encrypted pieces. Without three custodians' own keys the pieces are unreadable, and guessing the key failed${guess === null ? "" : " (unexpectedly)"}. A breach of the storage host leaks nothing.`);
+  };
+  $("#vRotate").onclick = async () => {
+    // proactive re-sharing: three current custodians each re-share THEIR piece; nobody rebuilds the key
+    const leaving = rotations % 2 === 0 ? 4 : 3, joiner = ["ombudsman", "audit office", "notary", "archive"][rotations % 4];
+    const part = [...Array(N).keys()].filter(i => i !== leaving && state.mode[i] !== "off").slice(0, K);
+    if (part.length < K) return show("Cannot rotate", "bad", "", "Re-sharing needs three custodians online to contribute. Bring some back first.");
+    const xs = part.map(i => shares[i][0]);
+    const lam = xs.map((xi, a) => xs.reduce((acc, xj, b) => a === b ? acc : acc * mod(-xj) % P * pow(mod(xi - xj), P - 2n) % P, 1n));
+    const subPolys = part.map(i => [shares[i][1], rand(), rand()]);
+    const fresh = Array.from({ length: N }, (_, j) => { const x = BigInt(j + 1);
+      return [x, subPolys.reduce((acc, g, a) => mod(acc + lam[a] * g.reduce((v, c, m) => mod(v + c * pow(x, BigInt(m))), 0n)), 0n)]; });
+    retired = { name: NAMES[leaving], share: shares[leaving] };
+    draw(part); await fly(part);
+    shares = fresh; NAMES[leaving] = joiner; state.mode[leaving] = "ok"; rotations++; draw([leaving]);
+    const opens = await tryOpen(shares.slice(1, 4)), mixed = await tryOpen([retired.share, shares[(leaving + 1) % N], shares[(leaving + 2) % N]]);
+    show(opens ? "Rotated" : "Broken", opens ? "good" : "bad", opens || "",
+      `${retired.name[0].toUpperCase() + retired.name.slice(1)} leaves and ${joiner} joins. ${(n => n.slice(0, -1).join(", ") + " and " + n[n.length - 1])(part.map(i => NAMES[i])).replace(/^./, c => c.toUpperCase())} each split <em>their own piece</em> again and sent the new pieces out; every custodian now holds a fresh piece of the same key. The key was never rebuilt and the same ${ct.length} bytes of ciphertext were never re-encrypted; the text above was opened afterwards from three new pieces, to show it still works. ` +
+      `The ${retired.name}'s old piece together with two new ones: ${mixed === null ? "decrypts nothing" : "decrypts (should not happen)"}. (Retired custodians must erase their old pieces: three old pieces together would still open the old copy.)`);
   };
   $("#vCollude").onclick = async () => {
     const two = await tryOpen([shares[0], shares[3]]);

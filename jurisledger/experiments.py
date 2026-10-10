@@ -933,7 +933,7 @@ def exp_vault(verbose: bool = True) -> Dict[str, Any]:
 
     own = [decrypt_note(k.secret_hex(), k.address, sealed["shares"][k.address]) for k in keys[:2]]
     two = [(int(n["x"]), int(n["y"], 16)) for n in own]
-    guess = Vt.combine(two).to_bytes(66, "big")[-32:]
+    guess = Vt.key_from_secret(Vt.combine(two, Vt.L))
     try:
         AESGCM_ok = True
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -999,7 +999,66 @@ def exp_vault(verbose: bool = True) -> Dict[str, Any]:
         swap_ok = False
     checks.append(("a sealed file relabelled as a different contract is refused", not swap_ok))
 
+    # -- custodians change: re-share without rebuilding the key ------------------ #
+    checks.append(("every share is publicly verifiable: a forged share fails against the dealer's commitments",
+                   all(Vt.share_valid(sealed["commitments"], int(n["x"]), int(n["y"], 16)) for n in own)
+                   and not Vt.share_valid(sealed["commitments"], 2, 12345)))
+    leaving = names.index("statistics-office")
+    new_names = names[:leaving] + names[leaving + 1:] + ["ombudsman", "audit-office"]
+    new_keys = keys[:leaving] + keys[leaving + 1:] + [_KP.from_seed("vault/ombudsman"), _KP.from_seed("vault/audit-office")]
+    new_custodians = [Vt.Custodian(k) for k in new_keys]
+    t0 = _time.perf_counter()
+    rotated, report = Vt.reshare(sealed, [Vt.Custodian(k) for k in keys[:3]], new_custodians, 4)
+    reshare_ms = (_time.perf_counter() - t0) * 1000
+    m.send(bakery.access(cid, "VIEW", "after the custodians changed"))
+    text5, _ = Vt.collect(rotated, bakery.key, new_custodians, m.chain)
+    checks.append(("custodians replaced and the threshold raised to 4 of 6: the same text opens, and the ciphertext "
+                   "was never re-encrypted", text5 == SCHEDULE_PROSE and rotated["ciphertext"] == sealed["ciphertext"]
+                   and rotated["threshold"] == 4 and len(rotated["custodians"]) == 6))
+    old_note = decrypt_note(keys[0].secret_hex(), keys[0].address, sealed["shares"][keys[0].address])
+    new_notes = [decrypt_note(k.secret_hex(), k.address, rotated["shares"][k.address]) for k in new_keys[1:4]]
+    mixed = [(int(old_note["x"]), int(old_note["y"], 16))] + [(int(n["x"]), int(n["y"], 16)) for n in new_notes]
+    try:
+        AESGCM(Vt.key_from_secret(Vt.combine(mixed, Vt.L))).decrypt(bytes.fromhex(rotated["nonce"]), bytes.fromhex(rotated["ciphertext"]), cid.encode())
+        mix_ok = True
+    except Exception:  # noqa: BLE001
+        mix_ok = False
+    m.send(bakery.access(cid, "VIEW", "three new custodians only"))
+    try:
+        Vt.collect(rotated, bakery.key, new_custodians[3:], m.chain)
+        three_ok = True
+    except Vt.VaultError:
+        three_ok = False
+    checks.append(("an old share mixed with new ones decrypts nothing, and three new shares fall short of the new threshold",
+                   not mix_ok and not three_ok))
+
+    class Saboteur(Vt.Custodian):
+        def contribute(self, sealed, new_custodians, new_threshold):
+            c = super().contribute(sealed, new_custodians, new_threshold)
+            target = new_custodians[0]
+            c["subshares"][target] = encrypt_note(target, {"contract_id": sealed["contract_id"], "epoch": c["epoch"],
+                                                           "from_x": c["x"], "to_x": 1, "v": format(7, "x")})
+            return c
+    rotated2, report2 = Vt.reshare(sealed, [Saboteur(keys[0])] + [Vt.Custodian(k) for k in keys[1:4]],
+                                   [Vt.Custodian(k) for k in new_keys], 3)
+    m.send(bakery.access(cid, "VIEW", "after a sabotaged rotation"))
+    text6, _ = Vt.collect(rotated2, bakery.key, [Vt.Custodian(k) for k in new_keys], m.chain)
+    checks.append(("a custodian that sends a bad piece while re-sharing is caught by the commitments and dropped; "
+                   "the rotation still completes", keys[0].address in report2["excluded"] and text6 == SCHEDULE_PROSE))
+    retired = [(int(n["x"]), int(n["y"], 16)) for n in
+               (decrypt_note(k.secret_hex(), k.address, sealed["shares"][k.address]) for k in keys[2:5])]
+    try:
+        AESGCM(Vt.key_from_secret(Vt.combine(retired, Vt.L))).decrypt(bytes.fromhex(sealed["nonce"]), bytes.fromhex(sealed["ciphertext"]), cid.encode())
+        retired_ok = True
+    except Exception:  # noqa: BLE001
+        retired_ok = False
+    checks.append(("honesty check: three retired custodians who KEPT their old shares can still decrypt together, "
+                   "so re-sharing protects only if old shares are erased", retired_ok))
+
     if verbose:
+        print(f"  rotation: {', '.join(names)} (3 of 5)  ->  {', '.join(new_names)} (4 of 6) in {reshare_ms:.0f} ms; "
+              f"contributors {len(report['contributors'])}, key never rebuilt")
+        print(f"  sabotaged rotation: excluded {[n for n, k in zip(names, keys) if k.address in report2['excluded']]}")
         print(f"  sealed: {Vt.sealed_bytes(sealed):,} bytes for {len(SCHEDULE_PROSE)} characters of text, "
               f"3-of-5 custodians ({', '.join(names)}); sealing {seal_ms:.0f} ms, a receipted read {read_ms:.0f} ms")
         print("  who saw it, from the public ledger:")

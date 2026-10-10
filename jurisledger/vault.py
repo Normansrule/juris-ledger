@@ -16,10 +16,20 @@ parties signed.  Therefore:
 * the storage host, or anyone who steals the sealed file, learns nothing;
 * any k-1 custodians, colluding, learn nothing (Shamir's scheme is information-theoretic);
 * every read leaves a trace on the public ledger *before* it can happen;
-* a custodian that returns a bad share is caught by a per-share hash fixed at sealing time.
+* a custodian that returns a bad share is caught: anyone can check a share against public
+  commitments to the sharing polynomial (Feldman's verifiable secret sharing);
+* custodians can be replaced, and the threshold changed, WITHOUT the key ever being rebuilt and
+  WITHOUT re-encrypting the text (proactive re-sharing; see ``reshare``).
 
-Shamir, "How to share a secret", Communications of the ACM 22(11), 1979.  Shares live in the
-field of integers modulo the Mersenne prime 2^521 - 1, which holds a 256-bit key with room.
+Version 2 (current): the secret is a scalar s modulo the order L of the Ed25519 group, the AES key
+is SHA-256 of s, and the dealer publishes C_j = a_j * B for each coefficient a_j of the sharing
+polynomial, so a share (x, y) is valid exactly when y * B = sum_j C_j * x^j.  Version 1 files
+(shares modulo 2^521 - 1, per-share hashes) still open.
+
+Shamir, "How to share a secret", CACM 22(11), 1979.  Feldman, "A practical scheme for
+non-interactive verifiable secret sharing", FOCS 1987.  Herzberg, Jarecki, Krawczyk and Yung,
+"Proactive secret sharing", CRYPTO 1995.  Desmedt and Jajodia, "Redistributing secret shares to
+new access structures", 1997.
 """
 from __future__ import annotations
 
@@ -36,10 +46,11 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from .chain import Chain
 from .contracts import prose_hash
 from .crypto import KeyPair
+from .ec import BASE, IDENTITY, L, Point
 from .privacy import decrypt_note, encrypt_note
 
-P = 2 ** 521 - 1
-VERSION = 1
+P = 2 ** 521 - 1          # version-1 field
+VERSION = 2
 
 
 class VaultError(Exception):
@@ -49,27 +60,73 @@ class VaultError(Exception):
 # --------------------------------------------------------------------------- #
 # Shamir secret sharing
 # --------------------------------------------------------------------------- #
-def split(secret: int, n: int, k: int) -> List[Tuple[int, int]]:
+def _poly(secret: int, k: int, q: int) -> List[int]:
+    return [secret % q] + [secrets.randbelow(q) for _ in range(k - 1)]
+
+
+def _eval(coeffs: Sequence[int], x: int, q: int) -> int:
+    return sum(c * pow(x, j, q) for j, c in enumerate(coeffs)) % q
+
+
+def split(secret: int, n: int, k: int, q: int = P) -> List[Tuple[int, int]]:
     if not 1 <= k <= n:
         raise ValueError("need 1 <= k <= n")
-    coeffs = [secret] + [secrets.randbelow(P) for _ in range(k - 1)]
-    return [(x, sum(c * pow(x, j, P) for j, c in enumerate(coeffs)) % P) for x in range(1, n + 1)]
+    coeffs = _poly(secret, k, q)
+    return [(x, _eval(coeffs, x, q)) for x in range(1, n + 1)]
 
 
-def combine(shares: Sequence[Tuple[int, int]]) -> int:
-    """Lagrange interpolation at zero."""
-    xs = [x for x, _ in shares]
+def lagrange_at_zero(xs: Sequence[int], q: int = P) -> Dict[int, int]:
+    """lambda_i such that f(0) = sum lambda_i f(x_i) for any polynomial of degree < len(xs)."""
     if len(set(xs)) != len(xs):
         raise ValueError("duplicate share")
-    total = 0
-    for i, (xi, yi) in enumerate(shares):
+    out = {}
+    for xi in xs:
         num = den = 1
-        for j, (xj, _) in enumerate(shares):
-            if i != j:
-                num = num * (-xj) % P
-                den = den * (xi - xj) % P
-        total = (total + yi * num * pow(den, -1, P)) % P
-    return total
+        for xj in xs:
+            if xj != xi:
+                num = num * (-xj) % q
+                den = den * (xi - xj) % q
+        out[xi] = num * pow(den, -1, q) % q
+    return out
+
+
+def combine(shares: Sequence[Tuple[int, int]], q: int = P) -> int:
+    """Lagrange interpolation at zero."""
+    lam = lagrange_at_zero([x for x, _ in shares], q)
+    return sum(y * lam[x] for x, y in shares) % q
+
+
+# -- Feldman commitments on Ed25519 --------------------------------------------- #
+def commit_poly(coeffs: Sequence[int]) -> List[str]:
+    return [(BASE * c).hex() if c else IDENTITY.hex() for c in coeffs]
+
+
+def _point(h: str) -> Point:
+    pt = Point.from_hex(h)
+    if not pt.in_subgroup():
+        raise VaultError("commitment is not in the prime-order subgroup")
+    return pt
+
+
+def public_share(commitments: Sequence[str], x: int) -> Point:
+    """sum_j C_j * x^j: the point every valid share for x must match."""
+    acc = IDENTITY
+    for j, c in enumerate(commitments):
+        e = pow(x, j, L)
+        if e:
+            acc = acc + _point(c) * e
+    return acc
+
+
+def share_valid(commitments: Sequence[str], x: int, y: int) -> bool:
+    try:
+        return 0 <= y < L and (BASE * y if y else IDENTITY) == public_share(commitments, x)
+    except (VaultError, ValueError):
+        return False
+
+
+def key_from_secret(s: int) -> bytes:
+    return hashlib.sha256(b"jurisledger/vault-key/v2" + (s % L).to_bytes(32, "little")).digest()
 
 
 def _share_digest(contract_id: str, x: int, y: int) -> str:
@@ -88,16 +145,16 @@ def seal(contract_id: str, prose: str, chain: Chain, custodians: List[str], thre
         raise VaultError("text does not match the hash the parties signed")
     if len(set(custodians)) != len(custodians) or not 1 <= threshold <= len(custodians):
         raise VaultError("need distinct custodians and 1 <= threshold <= number of custodians")
-    key = secrets.token_bytes(32)
+    secret = 1 + secrets.randbelow(L - 1)
     nonce = secrets.token_bytes(12)
-    ct = AESGCM(key).encrypt(nonce, prose.encode(), contract_id.encode())
-    shares = split(int.from_bytes(key, "big"), len(custodians), threshold)
+    ct = AESGCM(key_from_secret(secret)).encrypt(nonce, prose.encode(), contract_id.encode())
+    coeffs = _poly(secret, threshold, L)
     return {
         "version": VERSION, "contract_id": contract_id, "prose_hash": c["prose_hash"], "threshold": threshold,
-        "nonce": nonce.hex(), "ciphertext": ct.hex(), "custodians": list(custodians),
-        "shares": {cust: encrypt_note(cust, {"contract_id": contract_id, "x": x, "y": format(y, "x")})
-                   for cust, (x, y) in zip(custodians, shares)},
-        "share_digests": {str(x): _share_digest(contract_id, x, y) for x, y in shares},
+        "epoch": 0, "nonce": nonce.hex(), "ciphertext": ct.hex(), "custodians": list(custodians),
+        "commitments": commit_poly(coeffs),
+        "shares": {cust: encrypt_note(cust, {"contract_id": contract_id, "epoch": 0, "x": x, "y": format(_eval(coeffs, x, L), "x")})
+                   for x, cust in enumerate(custodians, start=1)},
     }
 
 
@@ -112,7 +169,11 @@ def open_sealed(sealed: Dict[str, Any], reader: KeyPair, releases: List[str]) ->
         except Exception:  # noqa: BLE001 - garbage in a release is a bad release, never a crash
             bad.append("?")
             continue
-        if note.get("contract_id") != cid or sealed["share_digests"].get(str(x)) != _share_digest(cid, x, y):
+        v2 = sealed.get("version", 1) >= 2
+        ok = note.get("contract_id") == cid and (
+            (note.get("epoch", 0) == sealed.get("epoch", 0) and share_valid(sealed["commitments"], x, y)) if v2
+            else sealed.get("share_digests", {}).get(str(x)) == _share_digest(cid, x, y))
+        if not ok:
             bad.append(note.get("custodian", "?"))
             continue
         if x not in {g[0] for g in good}:
@@ -120,7 +181,10 @@ def open_sealed(sealed: Dict[str, Any], reader: KeyPair, releases: List[str]) ->
     k = sealed["threshold"]
     if len(good) < k:
         raise VaultError(f"{len(good)} valid shares, {k} needed")
-    key = combine(good[:k]).to_bytes(32, "big")
+    if sealed.get("version", 1) >= 2:
+        key = key_from_secret(combine(good[:k], L))
+    else:
+        key = combine(good[:k]).to_bytes(32, "big")
     try:
         prose = AESGCM(key).decrypt(bytes.fromhex(sealed["nonce"]), bytes.fromhex(sealed["ciphertext"]), cid.encode()).decode()
     except Exception:  # noqa: BLE001
@@ -175,8 +239,8 @@ class Custodian:
         if used >= receipts:
             raise VaultError("no unspent VIEW receipt on the ledger: the reader must record CONTRACT_ACCESS first")
         note = decrypt_note(self.key.secret_hex(), self.address, sealed["shares"][self.address])
-        if note.get("contract_id") != cid:
-            raise VaultError("share was sealed for another contract")
+        if note.get("contract_id") != cid or note.get("epoch", 0) != sealed.get("epoch", 0):
+            raise VaultError("share was sealed for another contract or an earlier set of custodians")
         entry = {"contract_id": cid, "reader": reader, "height": chain.height, "receipt": used + 1}
         if self.journal:                                        # durable before the share leaves
             with open(self.journal, "a") as f:
@@ -186,6 +250,121 @@ class Custodian:
         self.released[(cid, reader)] = used + 1
         self.log.append(entry)
         return encrypt_note(reader, {**note, "custodian": self.address})
+
+
+    # -- proactive re-sharing ---------------------------------------------------- #
+    def _own_share(self, sealed: Dict[str, Any]) -> Tuple[int, int]:
+        if self.address not in sealed["shares"]:
+            raise VaultError("this custodian holds no share of that contract")
+        note = decrypt_note(self.key.secret_hex(), self.address, sealed["shares"][self.address])
+        x, y = int(note["x"]), int(note["y"], 16)
+        if note.get("contract_id") != sealed["contract_id"] or not share_valid(sealed["commitments"], x, y):
+            raise VaultError("own share does not match the public commitments")
+        return x, y
+
+    def contribute(self, sealed: Dict[str, Any], new_custodians: List[str], new_threshold: int) -> Dict[str, Any]:
+        """Re-share MY share: a fresh polynomial whose value at zero is my share, one point of it
+        encrypted to each new custodian, and public commitments to it.  Reveals nothing about my
+        share to anyone holding fewer than ``new_threshold`` of the points."""
+        x, y = self._own_share(sealed)
+        g = _poly(y, new_threshold, L)
+        epoch = sealed["epoch"] + 1
+        self.log.append({"contract_id": sealed["contract_id"], "reshare_to_epoch": epoch, "x": x})
+        return {"from": self.address, "x": x, "epoch": epoch, "commitments": commit_poly(g),
+                "subshares": {addr: encrypt_note(addr, {"contract_id": sealed["contract_id"], "epoch": epoch, "from_x": x,
+                                                        "to_x": j, "v": format(_eval(g, j, L), "x")})
+                              for j, addr in enumerate(new_custodians, start=1)}}
+
+    def adopt(self, sealed: Dict[str, Any], contributions: List[Dict[str, Any]], new_custodians: List[str],
+              new_threshold: int) -> Tuple[Optional[str], List[str]]:
+        """As a NEW custodian: check every sub-share sent to me against its sender's commitments,
+        and combine the valid ones into my new share.  Returns (my share sealed to me, or None if
+        any sub-share was bad; the senders I accuse)."""
+        j = new_custodians.index(self.address) + 1
+        accused, vals = [], {}
+        for c in contributions:
+            try:
+                note = decrypt_note(self.key.secret_hex(), self.address, c["subshares"][self.address])
+                v = int(note["v"], 16)
+                ok = (note["contract_id"] == sealed["contract_id"] and note["epoch"] == c["epoch"] and note["from_x"] == c["x"]
+                      and note["to_x"] == j and share_valid(c["commitments"], j, v))
+            except Exception:  # noqa: BLE001
+                ok = False
+            if ok:
+                vals[c["x"]] = v
+            else:
+                accused.append(c["from"])
+        if accused:
+            return None, accused
+        lam = lagrange_at_zero(list(vals), L)
+        y = sum(lam[x] * v for x, v in vals.items()) % L
+        epoch = sealed["epoch"] + 1
+        return encrypt_note(self.address, {"contract_id": sealed["contract_id"], "epoch": epoch, "x": j, "y": format(y, "x")}), []
+
+
+def contribution_valid(sealed: Dict[str, Any], c: Dict[str, Any], new_threshold: int) -> bool:
+    """Public check: the re-shared polynomial really starts at the sender's share, and has the
+    right degree.  Anyone can run it; no secrets needed."""
+    try:
+        return (c["epoch"] == sealed["epoch"] + 1 and len(c["commitments"]) == new_threshold
+                and sealed["custodians"][c["x"] - 1] == c["from"]
+                and _point(c["commitments"][0]) == public_share(sealed["commitments"], c["x"]))
+    except (VaultError, ValueError, KeyError, IndexError, TypeError):
+        return False
+
+
+def reshare(sealed: Dict[str, Any], old: List["Custodian"], new: List["Custodian"], new_threshold: int,
+            log=lambda m: None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Move a sealed contract to a new set of custodians and threshold.  The text is not
+    re-encrypted and the key is never rebuilt anywhere; old shares stop matching the new file.
+
+    1. each participating old custodian publishes a contribution (``contribute``);
+    2. contributions whose constant term does not match the sender's public share are dropped;
+    3. each new custodian checks its sub-shares and accuses senders of bad ones (``adopt``);
+       accused senders are dropped and the round repeats with the rest;
+    4. if at least the OLD threshold of contributions survive, the new public commitments are
+       the Lagrange combination of theirs; otherwise nothing changes.
+    """
+    if sealed.get("version", 1) < 2:
+        raise VaultError("re-sharing needs a version-2 sealed file (verifiable shares)")
+    addrs = [c.address for c in new]
+    if len(set(addrs)) != len(addrs) or not 1 <= new_threshold <= len(addrs):
+        raise VaultError("need distinct new custodians and 1 <= threshold <= their number")
+    contributions, excluded = [], {}
+    for o in old:
+        try:
+            contributions.append(o.contribute(sealed, addrs, new_threshold))
+        except VaultError as err:
+            excluded[o.address] = str(err)
+    for c in list(contributions):
+        if not contribution_valid(sealed, c, new_threshold):
+            excluded[c["from"]] = "its contribution does not start from its own committed share"
+            contributions.remove(c)
+    while True:
+        if len(contributions) < sealed["threshold"]:
+            raise VaultError(f"only {len(contributions)} valid contributions, {sealed['threshold']} needed; nothing changed")
+        contributions = contributions[:]
+        shares, accused = {}, set()
+        for n in new:
+            note, acc = n.adopt(sealed, contributions, addrs, new_threshold)
+            shares[n.address] = note
+            accused |= set(acc)
+        if not accused:
+            break
+        for a in accused:
+            excluded[a] = "sent a sub-share that does not match its commitments"
+        contributions = [c for c in contributions if c["from"] not in accused]
+        log(f"dropped {len(accused)} contributor(s); retrying with {len(contributions)}")
+    lam = lagrange_at_zero([c["x"] for c in contributions], L)
+    commitments = []
+    for m in range(new_threshold):
+        acc = IDENTITY
+        for c in contributions:
+            acc = acc + _point(c["commitments"][m]) * lam[c["x"]]
+        commitments.append(acc.hex())
+    new_sealed = {**sealed, "epoch": sealed["epoch"] + 1, "threshold": new_threshold, "custodians": addrs,
+                  "commitments": commitments, "shares": shares}
+    return new_sealed, {"contributors": [c["from"] for c in contributions], "excluded": excluded}
 
 
 def collect(sealed: Dict[str, Any], reader: KeyPair, custodians: List[Custodian], chain: Chain) -> Tuple[str, Dict[str, str]]:
