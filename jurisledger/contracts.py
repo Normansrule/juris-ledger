@@ -212,24 +212,51 @@ class ConfidentialWallet:
     The opening (amount and blinding) is the secret that makes the hidden balance
     spendable.  Losing it means the hidden funds cannot be proven and are stuck --
     back it up like the key.  A payment produces a *note* (amount, blinding) that
-    must reach the recipient off-ledger, or encrypted in the transaction's ``note``
-    field (encryption is not implemented here).
+    reaches the recipient encrypted inside the transaction (or off-ledger).
+
+    Two openings are kept (audit finding H2):
+
+    * ``confirmed`` -- what finalised blocks prove;
+    * the *projected* opening (``amount``/``blinding``) -- confirmed plus our own transactions
+      that are signed but not yet final, so several can be queued.
+
+    :meth:`sync` reconciles with the ledger: included transactions become confirmed, and a
+    transaction that can no longer be included (its nonce was used by something else, or the
+    block rejected it) is rolled back together with everything queued after it.
+
+    On a protocol-2 ledger an incoming payment is credited only when we *claim* it
+    (audit finding H1): :meth:`scan` stages CONFIDENTIAL_CLAIM transactions in ``outbox`` --
+    accepting notes that open the commitment, refusing the rest (they return to the payer).
     """
 
     def __init__(self, wallet: Wallet):
         from . import privacy as PV
         self.w, self.PV = wallet, PV
-        self.amount, self.blinding = 0, 0
+        self.amount, self.blinding = 0, 0                 # projected
+        self.confirmed: Tuple[int, int] = (0, 0)          # proven by finalised blocks
+        self.pending: List[Tuple[T.Transaction, int, int]] = []   # (tx, amount after, blinding after)
+        self.outbox: List[T.Transaction] = []             # claims to submit (protocol 2)
+        self.sent: Dict[str, Tuple[int, int]] = {}         # our payments' openings, in case they are refused
+        self._seen: set = set()
 
     @property
     def opening(self):
         return self.PV.Opening(self.amount, self.blinding % self.PV.Q)
 
+    @property
+    def confirmed_opening(self):
+        return self.PV.Opening(self.confirmed[0], self.confirmed[1] % self.PV.Q)
+
+    def _stage(self, tx: T.Transaction, amount: int, blinding: int) -> T.Transaction:
+        self.pending.append((tx, amount, blinding % self.PV.Q))
+        self.amount, self.blinding = amount, blinding % self.PV.Q
+        return tx
+
     def shield(self, amount: int) -> T.Transaction:
         import secrets
         r = secrets.randbelow(self.PV.Q)
-        self.amount, self.blinding = self.amount + amount, (self.blinding + r) % self.PV.Q
-        return self.w.make(T.SHIELD, {"amount": amount, "blinding": hex(r)})
+        tx = self.w.make(T.SHIELD, {"amount": amount, "blinding": hex(r)})
+        return self._stage(tx, self.amount + amount, self.blinding + r)
 
     def pay(self, to: str, amount: int, purpose: str, encrypt: bool = True) -> Tuple[T.Transaction, Dict[str, Any]]:
         """Returns the transaction and the secret note.  With ``encrypt`` (default) the note
@@ -244,31 +271,8 @@ class ConfidentialWallet:
             "to": to, "purpose": purpose, "commitment": PV.commitment_hex(c),
             "proof_amount": PV.range_proof(op), "proof_remaining": PV.range_proof(remaining),
             "note": PV.encrypt_note(to, secret) if encrypt else ""})
-        self.amount, self.blinding = remaining.amount, remaining.blinding
-        return tx, secret
-
-    def scan(self, chain: Any) -> int:
-        """Pick up every confidential payment addressed to us whose note we can decrypt.  Returns the count."""
-        PV = self.PV
-        seen = getattr(self, "_seen", set())
-        found = 0
-        for _, t in chain.iter_txs():
-            if t.kind == T.CONFIDENTIAL_PAYMENT and t.payload.get("to") == self.w.address and t.txid not in seen and t.payload.get("note"):
-                try:
-                    note = PV.decrypt_note(self.w.key.secret_hex(), self.w.address, t.payload["note"])
-                except Exception:
-                    continue
-                if PV.verify_opening(PV.commitment_from_hex(t.payload["commitment"]),
-                                     PV.Opening(note["amount"], int(note["blinding"], 16))):
-                    self.receive(note)
-                    found += 1
-                seen.add(t.txid)
-        self._seen = seen
-        return found
-
-    def receive(self, secret_note: Dict[str, Any]) -> None:
-        self.amount += secret_note["amount"]
-        self.blinding = (self.blinding + int(secret_note["blinding"], 16)) % self.PV.Q
+        self.sent[tx.txid] = (amount, op.blinding)
+        return self._stage(tx, remaining.amount, remaining.blinding), secret
 
     def unshield(self, amount: int) -> T.Transaction:
         PV = self.PV
@@ -276,5 +280,103 @@ class ConfidentialWallet:
             raise ValueError("insufficient hidden balance")
         remaining = PV.Opening(self.amount - amount, self.blinding)
         tx = self.w.make(T.UNSHIELD, {"amount": amount, "proof_remaining": PV.range_proof(remaining)})
-        self.amount = remaining.amount
-        return tx
+        return self._stage(tx, remaining.amount, remaining.blinding)
+
+    # -- reconciling with the ledger --------------------------------------- #
+    def sync(self, chain: Any) -> Dict[str, int]:
+        """Confirm what is final, roll back what can never be.  Returns counts."""
+        final = {t.txid for _, t in chain.iter_txs(partial_ok=True)}   # our pending txs are recent
+        acct = chain.state.accounts.get(self.w.address) or {}
+        nonce = acct.get("nonce", 0)
+        confirmed = dropped = 0
+        keep: List[Tuple[T.Transaction, int, int]] = []
+        for n, (tx, a, b) in enumerate(self.pending):
+            if tx.txid in final:
+                self.confirmed = (a, b)
+                confirmed += 1
+                continue
+            if tx.nonce < nonce or (tx.nonce == nonce and not self._still_valid(chain, tx)):
+                dropped = len(self.pending) - n             # never final: roll back it and everything built on it
+                break
+            keep.append((tx, a, b))
+        if dropped:
+            keep = []
+            self.w.resync(chain)
+        self.pending = keep
+        self.amount, self.blinding = (keep[-1][1], keep[-1][2]) if keep else self.confirmed
+        return {"confirmed": confirmed, "rolled_back": dropped}
+
+    @staticmethod
+    def _still_valid(chain: Any, tx: T.Transaction) -> bool:
+        """Would the next block accept it?  (A rejected transaction never consumes its nonce.)"""
+        from .state import InvalidTx
+        try:
+            chain.state.copy().apply(tx, chain.height + 1)
+            return True
+        except InvalidTx:
+            return False
+
+    def matches_ledger(self, chain: Any) -> bool:
+        """True iff our confirmed opening opens the ledger's commitment to our hidden balance."""
+        return self.PV.verify_opening(chain.state.hidden(self.w.address), self.confirmed_opening)
+
+    # -- receiving ---------------------------------------------------------- #
+    def _note_for(self, t: T.Transaction) -> Optional[Dict[str, Any]]:
+        PV = self.PV
+        if not t.payload.get("note"):
+            return None
+        try:
+            note = PV.decrypt_note(self.w.key.secret_hex(), self.w.address, t.payload["note"])
+            ok = PV.verify_opening(PV.commitment_from_hex(t.payload["commitment"]),
+                                   PV.Opening(note["amount"], int(note["blinding"], 16)))
+        except Exception:                                   # noqa: BLE001 - any bad note is simply not ours
+            return None
+        return note if ok else None
+
+    def scan(self, chain: Any) -> int:
+        """Pick up confidential payments addressed to us.  Returns how many usable notes were found.
+
+        Protocol 1: the ledger already credited them; a usable note is added to our opening.
+        Protocol 2: nothing is credited yet; claims are staged in ``outbox`` (accept usable notes,
+        refuse unusable ones) and our opening changes only when a claim is final (see :meth:`sync`)."""
+        self.sync(chain)
+        v2 = getattr(chain.state, "protocol", 1) >= 2
+        inbox = (chain.state.accounts.get(self.w.address) or {}).get("incoming", {}) if v2 else {}
+        found = 0
+        for _, t in chain.iter_txs(partial_ok=True):           # notes before a snapshot: see docs/LIMITATIONS
+            if v2 and t.kind == T.CONFIDENTIAL_CLAIM and t.txid not in self._seen \
+                    and t.payload.get("accept") is False and t.payload.get("payment") in self.sent:
+                a, b = self.sent.pop(t.payload["payment"])          # refused: the ledger gave it back to us
+                self._credit(a, b)
+                self._seen.add(t.txid)
+                continue
+            if t.kind != T.CONFIDENTIAL_PAYMENT or t.payload.get("to") != self.w.address or t.txid in self._seen:
+                continue
+            note = self._note_for(t)
+            if v2:
+                if t.txid not in inbox:
+                    self._seen.add(t.txid)                 # already claimed or refused
+                    continue
+                claim = self.w.make(T.CONFIDENTIAL_CLAIM, {"payment": t.txid, "accept": note is not None})
+                self.outbox.append(claim)
+                if note is not None:
+                    self._stage(claim, self.amount + note["amount"], self.blinding + int(note["blinding"], 16))
+                    found += 1
+                else:
+                    self._stage(claim, self.amount, self.blinding)
+            elif note is not None:
+                self.receive(note)
+                found += 1
+            self._seen.add(t.txid)
+        return found
+
+    def receive(self, secret_note: Dict[str, Any]) -> None:
+        """Protocol 1 only: the ledger has already credited this payment."""
+        self._credit(secret_note["amount"], int(secret_note["blinding"], 16))
+
+    def _credit(self, amount: int, blinding: int) -> None:
+        """Something already final on the ledger added (amount, blinding) to our hidden balance."""
+        q = self.PV.Q
+        self.confirmed = (self.confirmed[0] + amount, (self.confirmed[1] + blinding) % q)
+        self.pending = [(t, x + amount, (y + blinding) % q) for t, x, y in self.pending]
+        self.amount, self.blinding = self.amount + amount, (self.blinding + blinding) % q

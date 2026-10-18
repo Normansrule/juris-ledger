@@ -32,6 +32,7 @@ def init(out_dir: str, validators: List[str], issuers: List[str], chain_id: str,
     treasury = KeyPair.generate()
     genesis = {
         "chain_id": chain_id,
+        "protocol_version": 2,             # new networks get the audited rules (docs/SECURITY_FINDINGS.md)
         "validators": [k.address for k in vkeys],
         "accounts": [{"address": k.address, "name": f"validator-{i} ({host.split(':')[0]})", "role": S.VALIDATOR,
                       "sector": "", "balance": 0} for i, (k, host) in enumerate(zip(vkeys, validators))]

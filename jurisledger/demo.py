@@ -111,6 +111,7 @@ def build(out_dir: str, seed: int = 7) -> Dict[str, str]:
              "evidence": out / "evidence-cold-storage-lease.json", "register": out / "register.html"}
     paths["chain"].write_text(chain.export())
     paths["validators"].write_text(json.dumps({"chain_id": chain.chain_id, "validators": genesis["validators"]}, indent=2))
+    (out / "genesis.json").write_text(json.dumps(genesis, indent=1))   # the founding record to check audits against
     paths["evidence"].write_text(json.dumps(legal.evidence_bundle(chain, lease.txid, LEASE), indent=1))
     paths["register"].write_text(render(chain))
     return {k: str(v) for k, v in paths.items()} | {"store": str(out / "store"), "blocks": str(chain.height)}

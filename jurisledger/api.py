@@ -75,6 +75,20 @@ def _int(q: Dict[str, list], key: str, default: Optional[int]) -> Optional[int]:
     return n
 
 
+def next_nonce(i: Index, address: str) -> Optional[int]:
+    """The nonce this account's next transaction must carry, or None when the index cannot know.
+
+    Audit H11: v0.25.0 returned COUNT(*) of the account's transactions, which is wrong for an
+    index that starts from a snapshot (earlier transactions are not in it).  The last nonce
+    used plus one is right whenever the account has sent anything since the index starts; if
+    it has not, the answer is 0 only for an index that starts at genesis."""
+    last = i.db.execute("SELECT MAX(nonce) FROM txs WHERE sender=?", (address,)).fetchone()[0]
+    if last is not None:
+        return int(last) + 1
+    base = int(i.meta("base_height") or 0)
+    return 0 if base == 0 else None
+
+
 def make_handler(db_path: Path, limiter: RateLimiter, cors: str) -> type:
     local = threading.local()
 
@@ -114,9 +128,8 @@ def make_handler(db_path: Path, limiter: RateLimiter, cors: str) -> type:
         if not a:
             raise LookupError(f"no account named or addressed {who!r}")
         info = i.db.execute("SELECT name, role, sector, successor FROM accounts WHERE address=?", (a,)).fetchone()
-        sent = i.db.execute("SELECT COUNT(*) FROM txs WHERE sender=?", (a,)).fetchone()[0]
         return {"address": a, "name": info[0], "role": info[1], "sector": info[2], "successor": info[3],
-                "next_nonce": sent, "chain_id": i.meta("chain_id"), "payments": i.account_history(a, 200)}
+                "next_nonce": next_nonce(i, a), "chain_id": i.meta("chain_id"), "payments": i.account_history(a, 200)}
 
     def contract(_q, cid):
         events = idx().contract_timeline(cid)

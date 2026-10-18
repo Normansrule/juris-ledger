@@ -101,9 +101,11 @@ Fourteen claims, lettered in the source: (a) history tampering, (b) forged payme
 
 ## 5. `privacy` — hidden amounts, provable totals
 
-**Result.** The product of ten Pedersen commitments opens to the true total and rejects a false one. Differentially private sector totals for sixty firms have a mean error of about 257 %, 52 % and 10 % of an average sector total at ε = 0.2, 1 and 5.
+**Result.** The product of ten Pedersen commitments opens to the true total and rejects a false one. Differentially private sector totals for sixty firms have a mean error of about 352 %, 76 % and 16 % of an average sector total at ε = 0.2, 1 and 5. Thin sectors (fewer than five firms) are suppressed in 57 % of releases, sectors of fifteen in 6 %.
 
 **Reading.** Commitments work; differential privacy at this population size does not. Noise scales with one firm's maximum contribution, not with the economy, so the same mechanism is negligible noise over millions of firms and useless over dozens.
+
+**Changed in 0.26 (audit H6).** The errors rose from 257 / 52 / 10 % because the mechanism is now actually private: 20 % of the budget decides suppression on a *noisy* count (a fixed "fewer than k firms" cut-off distinguishes two economies that differ by one firm with certainty, which no private mechanism may do), the noise is integer-valued, and it comes from the operating system's generator. Earlier versions used a fixed default seed, so anyone could subtract the noise. The experiment still passes a seed, for reproducibility; a seeded release is not private.
 
 ---
 

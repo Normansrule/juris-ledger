@@ -29,6 +29,7 @@ from .block import Block, consensus_message
 from .chain import InvalidBlock
 from .consensus import Node, RoundLog
 from .crypto import KeyPair, verify
+from .signguard import DoubleSignRefused, SignGuard
 
 
 class _BlockMixin:
@@ -46,6 +47,8 @@ class _BlockMixin:
         self.evidence: List[T.Transaction] = []
         self.rejected_messages = 0
         self._accused: Set[Tuple[int, int]] = set()
+        self.guard: Optional[SignGuard] = getattr(self, "guard", None)     # set by a live validator (net.py)
+        self.refused_signatures = 0
         return self
 
     # -- identity and rotation follow the chain, not the simulator ---------- #
@@ -71,7 +74,19 @@ class _BlockMixin:
         return block.hash
 
     def _sign(self, kind: str, round_: int, value: Optional[str]) -> str:
-        return self.inner.key.sign(consensus_message(kind, self.chain_id, self.height, round_, value))
+        def sign() -> str:
+            return self.inner.key.sign(consensus_message(kind, self.chain_id, self.height, round_, value))
+        if self.guard is None:
+            return sign()
+        return self.guard.check_and_record(kind, self.height, round_, value, sign)
+
+    def broadcast(self, kind: str, value: Optional[str], valid_round: int = -1) -> None:
+        try:
+            m = self._make(kind, value, valid_round)
+        except DoubleSignRefused:
+            self.refused_signatures += 1                   # we may already have voted here: stay silent
+            return
+        self.sim.broadcast(m)                                                      # type: ignore[attr-defined]
 
     def _make(self, kind: str, value: Optional[str], valid_round: int) -> bft.Msg:
         m = bft.Msg(kind, self.round, value, self.i, valid_round=valid_round)     # type: ignore[attr-defined]
@@ -111,7 +126,7 @@ class _BlockMixin:
                     raise InvalidBlock("timestamp too far from local clock")
                 self.inner.chain.execute(self.blocks[value])
                 self.validity[value] = True
-            except InvalidBlock:
+            except Exception:  # noqa: BLE001 - a proposal is untrusted: ANY failure to check it means "invalid"
                 self.validity[value] = False
         return self.validity[value]
 
@@ -144,7 +159,7 @@ class _BlockMixin:
                 self.inner.chain.execute(blk)
                 self.inner.chain.check_certificate(blk, self.addresses)
                 self._decide(blk.hash, announce=False, block=blk)
-        except InvalidBlock:
+        except Exception:  # noqa: BLE001 - untrusted announcement
             self.rejected_messages += 1
         return True
 

@@ -99,7 +99,13 @@ class Fuzzer:
             amt = self.rng.randint(1, 2_000_00) if self.rng.random() < 0.9 else self.amount()
         else:
             a, b, purpose, amt = self.who(), self.who(), self.rng.choice(PURPOSES), self.amount()
-        t = self.w(a).pay(self.keys[b].address, amt, purpose)
+        try:
+            t = self.w(a).pay(self.keys[b].address, amt, purpose)
+        except ValueError:                                            # a wallet refuses to sign 10**30 (audit H10);
+            k = self.keys[a]                                          # an attacker signs it by hand: the state must refuse
+            raw = T.Transaction(self.chain_id, T.PAYMENT, k.address, self.state.accounts[k.address]["nonce"],
+                                {"to": self.keys[b].address, "amount": amt, "purpose": purpose})
+            t = T.Transaction(raw.chain_id, raw.kind, raw.sender, raw.nonce, raw.payload, k.sign(raw.signing_bytes()))
         amt = t.payload["amount"]
         bad = not (isinstance(amt, int) and not isinstance(amt, bool) and 0 < amt) or a == b
         if isinstance(amt, int) and not isinstance(amt, bool) and amt > self.state.accounts[t.sender]["balance"]:
@@ -174,7 +180,7 @@ class Fuzzer:
         kind = self.rng.randrange(5)
         if kind == 0:                                               # forged signature
             d = honest.to_dict(); d["payload"]["amount"] = 999_999_00
-            return T.Transaction.from_dict(d), True
+            return T.Transaction.from_dict(d, strict=False), True
         if kind == 1:                                               # another ledger's transaction
             return Wallet(self.keys[a], "elsewhere", honest.nonce).pay(self.keys[b].address, 1_00, S.TRANSFER), True
         if kind == 2 and self.accepted_log:                         # replay of an accepted one

@@ -43,7 +43,7 @@ class MiniWorld:
                  chain_id: str = "jurisledger-mini", n_validators: int = 4,
                  behaviour_targets: Optional[Dict[int, Tuple[str, str]]] = None,
                  network: Any = None, issuers: Tuple[str, ...] = (), policy: Optional[Dict[str, int]] = None,
-                 **network_options: Any):
+                 protocol: int = 1, **network_options: Any):
         self.chain_id = chain_id
         self.w: Dict[str, Wallet] = {n: Wallet(KeyPair.from_seed(f"{chain_id}/{n}"), chain_id)
                                      for n, _, _ in self.NAMES}
@@ -54,6 +54,8 @@ class MiniWorld:
                           "balance": 1_000_000_00} for n, r, s in self.NAMES],
             "validators": [k.address for k in self.vkeys],
         }
+        if protocol != 1:
+            self.genesis["protocol_version"] = protocol
         self.issuers: Dict[str, Wallet] = {n: Wallet(KeyPair.from_seed(f"{chain_id}/issuer/{n}"), chain_id) for n in issuers}
         if issuers:
             self.genesis["issuers"] = [{"address": w.address, "name": n} for n, w in self.issuers.items()]
@@ -398,17 +400,23 @@ def exp_privacy(verbose: bool = True) -> Dict[str, Any]:
         errs = []
         for seed in range(30):
             rel = private_sector_release(big, epsilon=eps, clip=clip, k_min=3, seed=seed)
-            errs += [abs(v - exact[s]) / scale for s, v in rel.items()]
+            errs += [abs(v - exact[s]) / scale for s, v in rel.items() if v is not None]
         sweep[eps] = sum(errs) / len(errs)
     release = private_sector_release(big, epsilon=1.0, clip=clip, k_min=3, seed=1)
-    thin = private_sector_release(rep, epsilon=1.0, clip=clip, k_min=5, seed=1)
-    checks.append(("sectors with too few firms are suppressed", all(v is None for v in thin.values())))
+    def suppressed(report_: Any) -> float:
+        runs = [private_sector_release(report_, epsilon=1.0, clip=clip, k_min=5, seed=s) for s in range(200)]
+        return sum(v is None for r in runs for v in r.values()) / sum(len(r) for r in runs)
+    thin_rate, big_rate = suppressed(rep), suppressed(big)
+    checks.append(("thin sectors are suppressed far more often than large ones (decided on a noisy count: "
+                   "a fixed cut-off would itself leak whether one firm exists)", thin_rate > 3 * big_rate))
     checks.append(("more privacy (smaller epsilon) costs more accuracy", sweep[0.2] > sweep[1.0] > sweep[5.0]))
     if verbose:
         print(f"  {len(amounts)} export payments committed; only their total {money(total.amount)} is opened")
         print("  differentially private value added, 15 firms per sector, per-firm clip $300,000, epsilon = 1:")
         for s, v in release.items():
-            print(f"    {s:<14} published {money(v):>16}   exact {money(exact[s]):>16}")
+            print(f"    {s:<14} published {money(v) if v is not None else 'suppressed':>16}   exact {money(exact[s]):>16}")
+        print(f"  suppressed in 200 releases: thin sectors {thin_rate:.0%}, sectors of 15 firms {big_rate:.0%}")
+        print("  (seeded here so the experiment is reproducible; a real release uses the OS random generator)")
         print("  privacy / accuracy trade-off (mean error as a share of the average sector total):")
         for eps, e in sweep.items():
             print(f"    epsilon {eps:<4} -> {e:.1%}")

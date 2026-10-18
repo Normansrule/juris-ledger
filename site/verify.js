@@ -21,18 +21,52 @@
   const enc = new TextEncoder();
   const FORMAT = "jurisledger/evidence/v1";
 
-  // ---- canonical JSON: sorted keys, no whitespace, integers only ---------- //
+  // ---- canonical JSON: the contract in docs/CANONICAL.md ------------------- //
+  // Sorted keys (by Unicode CODE POINT, as Python sorts - not UTF-16 code units), no whitespace,
+  // integers within +/-(2^53 - 1) only, valid Unicode only, no normalisation.
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
+  const text = s => { if (LONE_SURROGATE.test(s)) throw new Error("strings must be valid Unicode (no lone surrogates)"); return JSON.stringify(s); };
+  const byCodePoint = (a, b) => {
+    const x = Array.from(a), y = Array.from(b);
+    for (let i = 0; i < Math.min(x.length, y.length); i++) {
+      const d = x[i].codePointAt(0) - y[i].codePointAt(0);
+      if (d) return d;
+    }
+    return x.length - y.length;
+  };
+  // A file is parsed with parseJSON, not JSON.parse: JSON.parse turns the TEXT "3.0" or "1e3" into the
+  // integer 3 or 1000, while Python reads a float and refuses it, so the two verifiers would disagree
+  // about the same file (0.26 review of H10).  Integers outside +/-(2^53 - 1) are refused for the same reason.
+  function parseJSON(text) {
+    let inString = false, escaped = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inString) { if (escaped) escaped = false; else if (c === "\\") escaped = true; else if (c === '"') inString = false; continue; }
+      if (c === '"') { inString = true; continue; }
+      if (c === "-" || (c >= "0" && c <= "9")) {
+        let j = i; while (j < text.length && /[-+0-9.eE]/.test(text[j])) j++;
+        const tok = text.slice(i, j);
+        if (/[.eE]/.test(tok)) throw new Error(`number ${tok} is not an integer: canonical data has integers only`);
+        if (!Number.isSafeInteger(Number(tok))) throw new Error(`integer ${tok} is outside +/-(2^53 - 1)`);
+        i = j - 1;
+      }
+    }
+    return JSON.parse(text);
+  }
+
   function canonical(v) {
     if (v === null) return "null";
     if (typeof v === "boolean") return v ? "true" : "false";
     if (typeof v === "number") {
       if (!Number.isInteger(v)) throw new Error("floats are not allowed in canonical data");
+      if (!Number.isSafeInteger(v)) throw new Error("integers must lie within +/-(2^53 - 1)");
       return String(v);
     }
-    if (typeof v === "string") return JSON.stringify(v);
+    if (typeof v === "string") return text(v);
     if (Array.isArray(v)) return "[" + v.map(canonical).join(",") + "]";
-    const keys = Object.keys(v).sort();
-    return "{" + keys.map(k => JSON.stringify(k) + ":" + canonical(v[k])).join(",") + "}";
+    if (typeof v !== "object") throw new Error(typeof v + " is not allowed in canonical data");
+    const keys = Object.keys(v).sort(byCodePoint);
+    return "{" + keys.map(k => text(k) + ":" + canonical(v[k])).join(",") + "}";
   }
 
   const hexToBytes = h => { if (typeof h !== "string" || h.length % 2) throw new Error("bad hex"); const b = new Uint8Array(h.length / 2); for (let i = 0; i < b.length; i++) { const x = parseInt(h.substr(2 * i, 2), 16); if (Number.isNaN(x)) throw new Error("bad hex"); b[i] = x; } return b; };
@@ -98,42 +132,75 @@
     if (!Array.isArray(validators) || !validators.length) problems.push("no validator keys supplied");
     const items = bundle.items || [];
     let create = null, done = 0, total = items.length + (bundle.key_changes || []).length;
+    const counted = [];                              // [tx, height] of proven, own-network, validly signed items
     for (let i = 0; i < items.length; i++) {
-      const it = items[i], t = it.tx, id = await txid(t);
-      const sigOk = await edVerify(t.sender, txSigningBytes(t), t.signature);
-      const inc = await inclusionOk(id, it.inclusion, validators || []);
-      const net = t.chain_id === bundle.chain_id && it.inclusion.header.chain_id === bundle.chain_id;
-      if (!net) problems.push(`item ${i}: belongs to another network`);
-      if (!sigOk) problems.push(`item ${i}: transaction signature is invalid`);
-      if (!inc.quorum) problems.push(`item ${i}: block ${it.inclusion.header.height} has ${inc.votes} valid validator signatures, ${quorum((validators || []).length)} needed`);
-      if (!inc.merkle) problems.push(`item ${i}: the transaction is not under its block's Merkle root`);
-      if (!relates(t, id, cid)) problems.push(`item ${i}: unrelated to this contract`);
-      if (id === cid && t.kind === "CONTRACT_CREATE") create = t;
-      timeline.push({ height: it.inclusion.header.height, time: it.inclusion.header.timestamp || 0, kind: t.kind, by: t.sender, txid: id,
-        ok: sigOk && inc.quorum && inc.merkle && net, votes: inc.votes, detail: t.payload });
-      if (onProgress) await onProgress(++done, total, timeline[timeline.length - 1]);
+      const it = items[i];
+      try {
+        const t = it.tx, id = await txid(t), h = it.inclusion.header;
+        const sigOk = await edVerify(t.sender, txSigningBytes(t), t.signature);
+        const inc = await inclusionOk(id, it.inclusion, validators || []);
+        const net = t.chain_id === bundle.chain_id && h.chain_id === bundle.chain_id;
+        if (!net) problems.push(`item ${i}: belongs to another network`);
+        if (!sigOk) problems.push(`item ${i}: transaction signature is invalid`);
+        if (!inc.quorum) problems.push(`item ${i}: block ${h.height} has ${inc.votes} valid validator signatures, ${quorum((validators || []).length)} needed`);
+        if (!inc.merkle) problems.push(`item ${i}: the transaction is not under its block's Merkle root`);
+        if (!relates(t, id, cid)) problems.push(`item ${i}: unrelated to this contract`);
+        if (id === cid && t.kind === "CONTRACT_CREATE") create = t;
+        const ok = sigOk && inc.quorum && inc.merkle && net;
+        if (ok) counted.push([t, h.height]);
+        timeline.push({ height: h.height, time: h.timestamp || 0, kind: t.kind, by: t.sender, txid: id,
+          ok, votes: inc.votes, detail: t.payload });
+        if (onProgress) await onProgress(++done, total, timeline[timeline.length - 1]);
+      } catch (e) { problems.push(`item ${i}: malformed`); }
     }
-    const successor = {};
+    const changes = [];                              // [height, old, new]: proven final on THIS network only
     for (let i = 0; i < (bundle.key_changes || []).length; i++) {
-      const it = bundle.key_changes[i], t = it.tx, id = await txid(t), ch = keyChange(t);
-      const ok = ch && await edVerify(t.sender, txSigningBytes(t), t.signature) && (await inclusionOk(id, it.inclusion, validators)).quorum
-        && (await inclusionOk(id, it.inclusion, validators)).merkle;
-      if (!ok) problems.push(`key change ${i}: not a proven, final key change`); else successor[ch[0]] = ch[1];
+      const it = bundle.key_changes[i];
+      try {
+        const t = it.tx, id = await txid(t), ch = keyChange(t), h = it.inclusion.header;
+        if (t.chain_id !== bundle.chain_id || h.chain_id !== bundle.chain_id) problems.push(`key change ${i}: belongs to another network`);
+        else {
+          const inc = ch ? await inclusionOk(id, it.inclusion, validators || []) : null;
+          const ok = ch && await edVerify(t.sender, txSigningBytes(t), t.signature) && inc.quorum && inc.merkle;
+          if (!ok) problems.push(`key change ${i}: not a proven, final key change`); else changes.push([h.height, ch[0], ch[1]]);
+        }
+      } catch (e) { problems.push(`key change ${i}: malformed`); }
       if (onProgress) await onProgress(++done, total, null);
     }
-    const current = k => { for (let hops = 0; successor[k] && hops < 100; hops++) k = successor[k]; return k; };
+    changes.sort((a, b) => a[0] - b[0]);
+    const successor = {};
+    for (const [, o, n] of changes) {
+      if (o in successor && successor[o] !== n) problems.push(`key ${o.slice(0, 12)}... was changed twice to different keys`);
+      if (!(o in successor)) successor[o] = n;
+    }
+    const keysOf = key => {                          // [[fromHeight, key], ...] every key this identity held
+      const out = [[0, key]], seen = new Set([key]);
+      for (const [h, o, n] of changes) if (o === out[out.length - 1][1] && !seen.has(n)) { out.push([h, n]); seen.add(n); }
+      return out;
+    };
+    const heldAt = (hist, key, height) => hist.some(([since, k], n) =>
+      k === key && since <= height && (n + 1 >= hist.length || height <= hist[n + 1][0]));
+    const current = k => { const h = keysOf(k); return h[h.length - 1][1]; };
     const report = { contract_id: cid, timeline: timeline.sort((a, b) => a.height - b.height), problems, labels: bundle.labels || {} };
     if (!create) problems.push("the file does not contain the contract's creating transaction");
     else {
-      const p = create.payload, parties = new Set(p.parties.map(current));
-      const signed = new Set(parties.has(current(create.sender)) ? [current(create.sender)] : []);
-      for (const it of items) {
-        const t = it.tx;
-        if (t.kind === "CONTRACT_SIGN" && t.payload.contract_id === cid && t.payload.prose_hash === p.prose_hash && parties.has(current(t.sender)))
-          signed.add(current(t.sender));
+      const p = create.payload, parties = [...new Set(p.parties)];
+      const history = Object.fromEntries(parties.map(a => [a, keysOf(a)]));
+      const owner = {};
+      let collapsed = false;
+      for (const a of parties) for (const [, k] of history[a]) {
+        if (k in owner && owner[k] !== a) collapsed = true; else owner[k] = a;
       }
-      Object.assign(report, { title: p.title, parties: p.parties, signed_by: [...signed], prose_hash: p.prose_hash,
-        fully_signed: signed.size === parties.size, references: p.references || [] });
+      if (collapsed) problems.push("two parties resolve to the same key; signatures cannot be attributed");
+      const signed = new Set();
+      for (const [t, h] of counted) {
+        const isCreate = t === create;
+        const isSign = t.kind === "CONTRACT_SIGN" && t.payload.contract_id === cid && t.payload.prose_hash === p.prose_hash;
+        if (isCreate || isSign) for (const a of parties) if (heldAt(history[a], t.sender, h)) signed.add(a);
+      }
+      Object.assign(report, { title: p.title, parties: p.parties, signed_by: [...signed].map(current).sort(),
+        unsigned: parties.filter(a => !signed.has(a)).sort(), prose_hash: p.prose_hash,
+        fully_signed: parties.length > 0 && signed.size === parties.length && !collapsed, references: p.references || [] });
       if (typeof bundle.prose === "string") {
         report.prose_matches = (await sha256hex(enc.encode(bundle.prose))) === p.prose_hash;
         if (!report.prose_matches) problems.push("the enclosed text is NOT the text the parties signed");
@@ -315,5 +382,5 @@
 
   async function verifyTx(t) { return edVerify(t.sender, txSigningBytes(t), t.signature); }
 
-  root.JurisVerify = { canonical, txSigningBytes, verifyTx, bytesToHex, hexToBytes, txid, headerHash, verifyBundle, auditChain, merkleRoot, accountsOf, expenditure, reviewFlags, circularFlows, structuring, benford, duplicatePledges, supported, sha256hex, quorum };
+  root.JurisVerify = { canonical, parseJSON, txSigningBytes, verifyTx, bytesToHex, hexToBytes, txid, headerHash, verifyBundle, auditChain, merkleRoot, accountsOf, expenditure, reviewFlags, circularFlows, structuring, benford, duplicatePledges, supported, sha256hex, quorum };
 })(typeof globalThis !== "undefined" ? globalThis : this);

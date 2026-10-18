@@ -38,13 +38,32 @@ class StoreBusy(Exception):
     pass
 
 
+class CorruptStore(InvalidBlock):
+    """A complete record in blocks.jsonl is damaged.  Nothing is truncated."""
+
+
+class UntrustedSnapshot(InvalidBlock):
+    """The snapshot's certificate cannot be tied to a trust anchor from outside the snapshot."""
+
+
+ANCHOR_FORMAT = "jurisledger/anchor/v1"
+ANCHOR_PREFIX = b"jurisledger/anchor/v1:"
+
+
 class BlockStore:
     def __init__(self, directory: str | os.PathLike):
         self.dir = Path(directory)
         self.genesis_path, self.blocks_path = self.dir / "genesis.json", self.dir / "blocks.jsonl"
         self.snapshot_path, self.archive_dir = self.dir / "snapshot.json", self.dir / "archive"
+        self.anchor_path = self.dir / "anchor.json"
         self.recovered_partial_write = False
         self._lock_fd: Optional[int] = None
+        # Trust anchors for a snapshot whose certifiers are not the genesis validators.  They must come
+        # from OUTSIDE the snapshot (v0.25.0 trusted the snapshot's own "certified_by" list: finding F04).
+        self.trusted_validators: Optional[List[str]] = None   # operator-supplied (--trust-validators FILE)
+        self.anchor_key: Any = None                            # a validator's KeyPair: signs anchor.json
+        self.anchor_address: Optional[str] = None              # whose anchor.json signature we accept
+        self.anchored_by = "genesis"                           # how the last load was anchored (reported)
 
     @staticmethod
     def create(directory: str | os.PathLike, genesis: Dict[str, Any]) -> "BlockStore":
@@ -118,7 +137,10 @@ class BlockStore:
             name = self.archive_dir / f"blocks-{lo:09d}-{hi:09d}.jsonl.gz"
             self._atomic_write(name, gzip.compress(b"".join(
                 json.dumps(b.to_dict(), sort_keys=True).encode() + b"\n" for b in archive)))
+        # "certified_by" stays in the file for compatibility and inspection; it is NOT used as a trust anchor.
         self._atomic_write(self.snapshot_path, json.dumps({**snapshot, "certified_by": certified_by}, sort_keys=True).encode())
+        if self.anchor_key is not None:
+            self._write_anchor(snapshot, certified_by)
         self._atomic_write(self.blocks_path, b"".join(json.dumps(b.to_dict(), sort_keys=True).encode() + b"\n" for b in keep))
 
     def compact(self, keep_blocks: int, keep_archive: bool = True) -> Dict[str, Any]:
@@ -146,27 +168,109 @@ class BlockStore:
     def genesis(self) -> Dict[str, Any]:
         return json.loads(self.genesis_path.read_text())
 
+    # -- trust anchors -------------------------------------------------------- #
+    def _anchor_body(self, snapshot: Dict[str, Any], validators: List[str]) -> Dict[str, Any]:
+        from .block import BlockHeader
+        h = BlockHeader.from_dict(snapshot["header"])
+        return {"format": ANCHOR_FORMAT, "chain_id": h.chain_id, "height": h.height, "header_hash": h.hash,
+                "validators": list(validators)}
+
+    def _write_anchor(self, snapshot: Dict[str, Any], validators: List[str]) -> None:
+        from .crypto import canonical
+        body = self._anchor_body(snapshot, validators)
+        body["signer"] = self.anchor_key.address
+        body["signature"] = self.anchor_key.sign(ANCHOR_PREFIX + canonical({k: v for k, v in body.items() if k != "signature"}))
+        self._atomic_write(self.anchor_path, json.dumps(body, sort_keys=True).encode())
+
+    def _anchor_validators(self, snap: Dict[str, Any]) -> Optional[List[str]]:
+        """Validators from anchor.json, if it is signed by the key we were told to expect."""
+        from .crypto import canonical, verify
+        if not self.anchor_address or not self.anchor_path.exists():
+            return None
+        try:
+            a = json.loads(self.anchor_path.read_text())
+            want = self._anchor_body(snap, a["validators"])
+            body = {k: v for k, v in a.items() if k != "signature"}
+            if a.get("signer") != self.anchor_address or {k: v for k, v in body.items() if k != "signer"} != want:
+                return None
+            if not verify(self.anchor_address, ANCHOR_PREFIX + canonical(body), a["signature"]):
+                return None
+            return list(a["validators"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
+    def _archive_validators(self, genesis: Dict[str, Any], snap: Dict[str, Any]) -> Optional[List[str]]:
+        """Replay the archive from genesis (every certificate checked, from the genesis set onward)
+        up to the snapshot; return the set that certified the snapshot's block, or None."""
+        from .block import BlockHeader
+        base = BlockHeader.from_dict(snap["header"])
+        files = self.archived()
+        if not files:
+            return None
+        chain = Chain(genesis)
+        try:
+            for f in files:
+                for line in gzip.decompress(f.read_bytes()).splitlines():
+                    block = Block.from_dict(json.loads(line))
+                    if block.header.height <= chain.height:
+                        continue
+                    if block.header.height > base.height:
+                        break
+                    before = list(chain.state.validators)
+                    chain.add_block(block)
+                    if block.header.height == base.height:
+                        ok = block.header.hash == base.hash and chain.state.root() == base.state_root
+                        return before if ok else None
+        except (OSError, ValueError, KeyError, TypeError, InvalidBlock):
+            return None
+        return None
+
     def _start_chain(self) -> Chain:
         genesis, snap = self.genesis(), self.snapshot()
+        self.anchored_by = "genesis"
         if not snap:
             return Chain(genesis)
-        try:                                           # anchored to the founding validators when possible
+        try:                                           # 1. the founding validators
             return Chain.from_snapshot(genesis, snap, genesis["validators"])
-        except InvalidBlock:                           # the set changed by vote before the snapshot: use the set
-            return Chain.from_snapshot(genesis, snap, snap.get("certified_by", []))   # recorded when it was pruned
+        except InvalidBlock as first:
+            reason = str(first)
+        # The set changed by vote before the snapshot.  Never trust the snapshot's own "certified_by".
+        for how, vals in (("operator-supplied validator list", self.trusted_validators),     # 2.
+                          ("anchor signed by this validator's key", self._anchor_validators(snap)),  # 3.
+                          ("archive replayed from genesis", self._archive_validators(genesis, snap))):  # 4.
+            if vals:
+                try:
+                    c = Chain.from_snapshot(genesis, snap, vals)
+                except InvalidBlock as err:
+                    reason = f"{how}: {err}"
+                    continue
+                self.anchored_by = how
+                return c
+        raise UntrustedSnapshot(
+            f"the snapshot in {self.snapshot_path} is not certified by the genesis validators ({reason}), and no "
+            f"independent trust anchor confirms the set that certified it. A snapshot cannot vouch for itself. "
+            f"Supply the validator set you trust (--trust-validators FILE), keep the archive/ directory, or "
+            f"re-sync from peers (when emptying the store, keep sign_state.json: it is what stops this validator "
+            f"signing twice).")
 
     def _replay(self, record_validators: bool = False):
         chain = self._start_chain()
         vals = {chain.height: list(chain.state.validators)} if record_validators else None
         raw = self.blocks_path.read_bytes()
         good = 0
-        for line in raw.splitlines(keepends=True):
+        lines = raw.splitlines(keepends=True)
+        for n, line in enumerate(lines):
             if not line.endswith(b"\n"):
-                break                                  # torn final write
+                break                                  # torn final write (only the last line can lack "\n")
             try:
                 block = Block.from_dict(json.loads(line))
             except (ValueError, KeyError, TypeError):
-                break
+                # Audit H7: a COMPLETE record that does not parse is damage, not a torn write.  v0.25.0
+                # truncated here, silently discarding every valid block after it.  Fail closed instead.
+                raise CorruptStore(f"{self.blocks_path}: record {n + 1} of {len(lines)} is damaged; "
+                                   f"{len(lines) - n - 1} later records are intact and were NOT discarded. "
+                                   f"Restore the file from a peer (jurisledger export) or backup. Keep sign_state.json: it is what stops "
+                                   f"this validator signing twice.") from None
             if block.header.height <= chain.height:    # already covered by the snapshot (crash mid-prune)
                 good += len(line)
                 continue

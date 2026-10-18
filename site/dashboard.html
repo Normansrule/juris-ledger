@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-oHSvNVTz26eur/UlXLwAP8j9MO0dqT0upqipK39mG/o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>JurisLedger dashboard — the economy and the network, block by block</title>
@@ -67,6 +68,7 @@ table.top td.n,table.top th.n{text-align:right}
       <span class="live" id="live"><i></i><span id="liveText">not connected</span></span>
     </div>
     <p class="caption" id="cap" style="min-height:0;margin:.4rem 0 0">To watch a real network: <code>jurisledger index 127.0.0.1:7701 -o ledger.db</code>, then <code>jurisledger api ledger.db --follow 127.0.0.1:7701</code>, then press <strong>Connect live</strong>. The page refreshes every five seconds.</p>
+    <p class="caption trust" id="trust" role="note" style="min-height:0;margin:.2rem 0 0"></p>
   </div>
 
   <div class="kpis" id="kpis"></div>
@@ -104,13 +106,15 @@ table.top td.n,table.top th.n{text-align:right}
   <p class="note" style="font-size:.88rem;color:var(--ink-2);margin-top:1rem">Everything here is derived from the index, which is built only from audited blocks. Hidden (confidential) payment amounts are not in it; their count per block is.</p>
 </main>
 <footer><div class="wrap">JurisLedger is a research prototype under the MIT licence.</div></footer>
+<script src="safe.js"></script>
 <script src="sample-metrics.js"></script>
 <script>
 (() => {
+const { html, num } = window.JurisSafe;
 const $ = s => document.querySelector(s);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const cssv = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const money = c => (c / 100).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const money = c => Number.isFinite(c) ? (c / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—";
 const compact = c => { const v = c / 100, a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M" : a >= 1e3 ? (v / 1e3).toFixed(0) + "k" : v.toFixed(0); };
 const MIX = [["c", "#127C6E", "households"], ["i", "#0F1F3D", "investment"], ["g", "#B4720C", "government"], ["x", "#6B7FA8", "exports"]];
 let rows = [], timer = null, charts = [];
@@ -123,7 +127,7 @@ function kpis(status, rows) {
   const items = [[status.height ?? rows.length, "blocks"], [(status.transactions ?? rows.reduce((s, r) => s + r.n_tx, 0)).toLocaleString(), "transactions"],
     [money(g), "GDP so far"], [sig.toFixed(2), "signatures per block"], [slow, "blocks needing extra rounds"],
     [gaps.length ? (gaps[gaps.length >> 1] / 1000).toFixed(1) + " s" : "—", "median block time"]];
-  $("#kpis").innerHTML = items.map(([v, l]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join("");
+  $("#kpis").innerHTML = html`${items.map(([v, l]) => html`<div class="kpi"><b>${v}</b><span>${l}</span></div>`)}`;
 }
 
 // ---------- one small chart engine: axes, bars, lines, stacked areas, tooltip, sweep-in animation
@@ -144,7 +148,7 @@ function chart(canvas, draw, tipText) {
     if (!rows.length) return;
     const r = canvas.getBoundingClientRect(), fx = (e.clientX - r.left - pad.l) / (W - pad.l - pad.r);
     hover = Math.max(0, Math.min(rows.length - 1, Math.round(fx * (rows.length - 1)))); render();
-    tip.style.display = "block"; tip.innerHTML = tipText(rows[hover]);
+    tip.style.display = "block"; tip.textContent = tipText(rows[hover]);
     tip.style.left = Math.min(W - 180, e.clientX - r.left + 12) + "px"; tip.style.top = (e.clientY - r.top + canvas.offsetTop - 34) + "px";
   });
   canvas.addEventListener("mouseleave", () => { hover = -1; tip.style.display = "none"; render(); });
@@ -218,17 +222,18 @@ function renderSut(t) {
   const cols = [...t.industries, ...t.final_columns], cells = t.products.map((p, r) => [...t.use[r], ...t.final[r]]);
   const max = Math.max(1, ...cells.flat()), money0 = c => c ? compact(c) : "·";
   const shade = v => { const a = v ? 6 + 49 * Math.sqrt(v / max) : 0; return { bg: `color-mix(in srgb, var(--verified) ${a.toFixed(0)}%, var(--sheet))` }; };   // capped so text stays readable in both themes
-  const head = `<tr><th></th>${t.industries.map(i => `<th scope="col">${i}</th>`).join("")}${t.final_columns.map(f => `<th scope="col">${f}</th>`).join("")}<th scope="col">supply = use</th></tr>`;
-  const body = t.products.map((p, r) => `<tr><th scope="row" class="row">${p}</th>${cells[r].map((v, c) =>
-    { const s = shade(v); return `<td style="background:${s.bg}" title="${p} used by ${cols[c]}: ${money(v)}">${money0(v)}</td>`; }).join("")}
-    <td class="${t.imbalances[p] === 0 ? "ok" : "bad"}">${t.imbalances[p] === 0 ? "✓ " + compact(t.supply[p]) : "off by " + money(t.imbalances[p])}</td></tr>`).join("");
-  const va = Object.entries(t.value_added).map(([k, vals], n) => `<tr class="${n === 0 ? "sep" : ""}"><th scope="row" class="row">${k}</th>${vals.map(v => `<td>${money0(v)}</td>`).join("")}${"<td></td>".repeat(t.final_columns.length + 1)}</tr>`).join("");
-  const out = `<tr><th scope="row" class="row">output</th>${t.output.map(v => `<td><strong>${money0(v)}</strong></td>`).join("")}${"<td></td>".repeat(t.final_columns.length + 1)}</tr>`;
-  $("#sut").innerHTML = head + body + va + out;
+  const blanks = Array.from({ length: t.final_columns.length + 1 }, () => html`<td></td>`);
+  const head = html`<tr><th></th>${t.industries.map(i => html`<th scope="col">${i}</th>`)}${t.final_columns.map(f => html`<th scope="col">${f}</th>`)}<th scope="col">supply = use</th></tr>`;
+  const body = t.products.map((p, r) => html`<tr><th scope="row" class="row">${p}</th>${cells[r].map((v, c) =>
+    html`<td style="background:${shade(v).bg}" title="${p} used by ${cols[c]}: ${money(v)}">${money0(v)}</td>`)}
+    <td class="${t.imbalances[p] === 0 ? "ok" : "bad"}">${t.imbalances[p] === 0 ? "✓ " + compact(t.supply[p]) : "off by " + money(t.imbalances[p])}</td></tr>`);
+  const va = Object.entries(t.value_added).map(([k, vals], n) => html`<tr class="${n === 0 ? "sep" : ""}"><th scope="row" class="row">${k}</th>${vals.map(v => html`<td>${money0(v)}</td>`)}${blanks}</tr>`);
+  const out = html`<tr><th scope="row" class="row">output</th>${t.output.map(v => html`<td><strong>${money0(v)}</strong></td>`)}${blanks}</tr>`;
+  $("#sut").innerHTML = html`${head}${body}${va}${out}`;
   const g = t.gdp, same = g.production === g.expenditure && g.expenditure === g.income;
-  $("#sutCheck").innerHTML = `<span class="${same ? "ok" : "bad"}">${same ? "✓" : "✗"}</span> GDP ${money(g.expenditure)} three ways — production, expenditure and income agree to the cent; every product's supply equals its use, so there is no statistical discrepancy to publish.`;
+  $("#sutCheck").innerHTML = html`<span class="${same ? "ok" : "bad"}">${same ? "✓" : "✗"}</span> GDP ${money(g.expenditure)} three ways — production, expenditure and income agree to the cent; every product's supply equals its use, so there is no statistical discrepancy to publish.`;
   const sel = $("#wiProduct"), keep = sel.value;
-  sel.innerHTML = t.leontief.industries.filter(i => i !== "government").map(i => `<option value="${i}">${i}</option>`).join("");
+  sel.innerHTML = html`${t.leontief.industries.filter(i => i !== "government").map(i => html`<option value="${i}">${i}</option>`)}`;
   if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
   whatIf();
 }
@@ -237,38 +242,81 @@ function whatIf() {
   const L = sut.leontief, inds = L.industries, c = inds.indexOf($("#wiProduct").value), amt = +$("#wiAmount").value * 100;
   $("#wiAmountLabel").textContent = money(amt);
   const extra = inds.map((_, r) => L.matrix[r][c] * amt), max = Math.max(1, ...extra), total = extra.reduce((a, b) => a + b, 0);
-  $("#wiBars").innerHTML = inds.map((ind, r) => `<div class="hbar"><span>${ind}</span><div class="track"><div class="fill ${r === c ? "direct" : ""}" style="width:${(extra[r] / max * 100).toFixed(1)}%"></div></div><span class="n">${money(extra[r])}</span></div>`).join("");
+  $("#wiBars").innerHTML = html`${inds.map((ind, r) => html`<div class="hbar"><span>${ind}</span><div class="track"><div class="fill ${r === c ? "direct" : ""}" style="width:${(extra[r] / max * 100).toFixed(1)}%"></div></div><span class="n">${money(extra[r])}</span></div>`)}`;
   $("#wiTotal").textContent = money(total);
   $("#wiMult").textContent = `of output across the economy: ${(total / Math.max(amt, 1)).toFixed(3)} for every 1.00 of demand (the output multiplier). Amber: the product itself; teal: the supply chain behind it.`;
   $("#wiBars").setAttribute("aria-label", `Extra output: ${inds.map((ind, r) => `${ind} ${money(extra[r])}`).join(", ")}`);
 }
 $("#wiProduct").onchange = whatIf; $("#wiAmount").oninput = whatIf;
 function show(data, label) {
-  rows = data.rows || []; kpis(data.status || {}, rows); build(); describe(); renderSut(data.sut || null);
-  $("#top").innerHTML = "<tr><th>account</th><th>role</th><th class='n'>paid</th><th class='n'>received</th></tr>" +
-    (data.top || []).map(a => `<tr><td>${String(a.name).replace(/</g, "&lt;")}</td><td>${a.role}</td><td class="n">${money(a.paid)}</td><td class="n">${money(a.received)}</td></tr>`).join("");
+  rows = cleanRows(data.rows); kpis(data.status || {}, rows); build(); describe(); renderSut(cleanSut(data.sut));
+  $("#top").innerHTML = html`<tr><th>account</th><th>role</th><th class="n">paid</th><th class="n">received</th></tr>${
+    (Array.isArray(data.top) ? data.top : []).map(a => html`<tr><td>${a.name}</td><td>${a.role}</td><td class="n">${money(num(a.paid))}</td><td class="n">${money(num(a.received))}</td></tr>`)}`;
   $("#cap").textContent = label;
+  $("#trust").textContent = trust;
 }
+// ---------- typed input: everything from an API or a file is checked before it is drawn (audit H12)
+const ROW_FIELDS = ["height", "n_tx", "n_payments", "volume", "c", "i", "g", "x", "m", "confidential", "timestamp", "n_votes", "commit_round"];
+function cleanRows(input) {
+  if (!Array.isArray(input)) return [];
+  return input.filter(r => r && typeof r === "object" && Number.isSafeInteger(r.height))
+    .map(r => Object.fromEntries(ROW_FIELDS.map(k => [k, Number.isFinite(r[k]) ? r[k] : 0])));
+}
+function cleanSut(t) {
+  const strs = a => Array.isArray(a) && a.every(x => typeof x === "string");
+  const nums = a => Array.isArray(a) && a.every(x => Number.isFinite(x));
+  const grid = (g, n) => Array.isArray(g) && g.length === n && g.every(nums);
+  if (!t || !strs(t.industries) || !strs(t.products) || !strs(t.final_columns) || !nums(t.output)) return null;
+  if (!grid(t.use, t.products.length) || !grid(t.final, t.products.length) || !t.leontief || !strs(t.leontief.industries)
+      || !grid(t.leontief.matrix, t.leontief.industries.length) || !t.gdp || typeof t.value_added !== "object") return null;
+  return t;
+}
+let trust = "";
 function parseCsv(text) {
   const [head, ...lines] = text.trim().split(/\r?\n/), cols = head.split(",");
   return lines.map(l => Object.fromEntries(l.split(",").map((v, i) => [cols[i], Number(v)])));
 }
+// ---------- live: page through /api/metrics (5,000 rows per call) and refresh on every new block (audit H13)
+const PAGE = 5000;
+let live = { base: "", height: -1, rows: [], busy: false };
+const getJSON = async url => { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); };
 async function poll(base) {
+  if (live.busy) return;
+  live.busy = true;
   try {
-    const [st, m, top, sutLive] = await Promise.all([fetch(base + "/api/status").then(r => r.json()),
-      fetch(base + "/api/metrics?from=1&to=100000000").then(r => r.json()), fetch(base + "/api/accounts/top?n=8").then(r => r.json()),
-      fetch(base + "/api/sut").then(r => r.ok ? r.json() : null).catch(() => null)]);
-    const grew = m.rows.length !== rows.length;
-    if (grew) show({ status: st, rows: m.rows, top: top.accounts, sut: sutLive }, `Live from ${base}: ${st.chain_id}, block ${st.height}. Refreshing every five seconds.`);
-    $("#live").classList.add("on"); $("#liveText").textContent = `live · block ${st.height}`;
+    const st = await getJSON(base + "/api/status");
+    const height = num(st.height);
+    if (!Number.isSafeInteger(height)) throw new Error("bad status");
+    if (base !== live.base || height < live.height) live = { base, height: -1, rows: [], busy: true };   // new API, or a reset ledger
+    if (height !== live.height) {
+      let from = live.rows.length ? live.rows[live.rows.length - 1].height + 1 : 1;
+      while (from <= height) {                                       // every page until the status height
+        const m = await getJSON(`${base}/api/metrics?from=${from}&to=${Math.min(height, from + PAGE - 1)}`);
+        const page = cleanRows(m.rows).filter(r => r.height >= from && r.height <= height);
+        live.rows.push(...page);
+        if (!Number.isSafeInteger(m.to) || m.to < from) break;
+        from = m.to + 1;
+      }
+      const [top, sutLive] = await Promise.all([getJSON(base + "/api/accounts/top?n=8"), getJSON(base + "/api/sut").catch(() => null)]);
+      live.height = height;
+      const complete = live.rows.length && live.rows[live.rows.length - 1].height === height;
+      trust = `Display data from ${base}: an API you chose, NOT verified in this browser. ` +
+              (complete ? "" : "Some blocks were missing from the API's answer, so the charts may be incomplete. ") +
+              "To verify, export the ledger and audit it (jurisledger audit, or the explorer page).";
+      show({ status: st, rows: live.rows, top: top.accounts, sut: sutLive },
+           `Live: ${String(st.chain_id).slice(0, 60)}, block ${height}${complete ? "" : " (incomplete)"}. Refreshing every five seconds.`);
+    }
+    $("#live").classList.add("on"); $("#liveText").textContent = `live · block ${height}`;
   } catch (e) {
     $("#live").classList.remove("on"); $("#liveText").textContent = "cannot reach the API";
-    $("#cap").innerHTML = `Could not reach <code>${base.replace(/</g, "&lt;")}</code>. Start it with <code>jurisledger api ledger.db</code>; if this page is on GitHub Pages, your browser may ask to allow access to a local address.`;
+    $("#cap").innerHTML = html`Could not reach <code>${base}</code>. Start it with <code>jurisledger api ledger.db</code>; if this page is on GitHub Pages, your browser may ask to allow access to a local address.`;
+  } finally {
+    live.busy = false;
   }
 }
-$("#connect").onclick = () => { clearInterval(timer); rows = []; const base = $("#apiUrl").value.replace(/\/$/, ""); poll(base); timer = setInterval(() => poll(base), 5000); };
-$("#sample").onclick = () => { clearInterval(timer); $("#live").classList.remove("on"); $("#liveText").textContent = "sample"; show(window.JURIS_METRICS, "The sample: a simulated economy over ten periods, 60 blocks and 1,908 transactions, run on the two-phase network with random delays and one of four validators offline, then indexed."); };
-$("#csv").onchange = async e => { const f = e.target.files[0]; if (!f) return; clearInterval(timer); show({ rows: parseCsv(await f.text()) }, `From ${f.name}.`); };
+$("#connect").onclick = () => { clearInterval(timer); rows = []; live = { base: "", height: -1, rows: [], busy: false }; const base = $("#apiUrl").value.replace(/\/$/, ""); poll(base); timer = setInterval(() => poll(base), 5000); };
+$("#sample").onclick = () => { clearInterval(timer); $("#live").classList.remove("on"); $("#liveText").textContent = "sample"; trust = "Sample data shipped with this page (simulated, for illustration)."; show(window.JURIS_METRICS, "The sample: a simulated economy over ten periods, 60 blocks and 1,908 transactions, run on the two-phase network with random delays and one of four validators offline, then indexed."); };
+$("#csv").onchange = async e => { const f = e.target.files[0]; if (!f) return; clearInterval(timer); trust = "From a file you chose: not verified."; show({ rows: parseCsv(await f.text()) }, `From ${f.name}.`); };
 if (window.JURIS_METRICS) $("#sample").click();
 })();
 </script>

@@ -33,8 +33,48 @@ SCRYPT_N, SCRYPT_R, SCRYPT_P = 2 ** 15, 8, 1
 PBKDF2_ITERATIONS = 600_000   # OWASP 2023 guidance for PBKDF2-HMAC-SHA256; used where scrypt is unavailable (browsers)
 
 
+# Accepted ranges, checked BEFORE any expensive work (audit H5).  A key file is untrusted input:
+# without bounds on r and p a crafted file could demand gigabytes of memory or hours of CPU.
+SCRYPT_N_RANGE = (2 ** 14, 2 ** 20)
+SCRYPT_R_RANGE = (1, 32)
+SCRYPT_P_RANGE = (1, 4)
+SCRYPT_MAX_MEMORY = 256 * 1024 * 1024        # 128 * N * r bytes
+PBKDF2_RANGE = (100_000, 10_000_000)
+KDFS = {"scrypt", "pbkdf2-sha256"}
+
+
 class KeystoreError(Exception):
     pass
+
+
+def _check_params(data: dict) -> str:
+    kdf = data.get("kdf", "scrypt")
+    if kdf not in KDFS:
+        raise KeystoreError(f"unknown key-derivation function {kdf!r}")
+    if data.get("cipher", "aes-256-gcm") != "aes-256-gcm":
+        raise KeystoreError("unknown cipher")
+    if not isinstance(data.get("salt"), str) or not 32 <= len(data["salt"]) <= 128:
+        raise KeystoreError("keystore salt must be 16-64 bytes")
+    if not isinstance(data.get("nonce"), str) or len(data["nonce"]) != 24:
+        raise KeystoreError("keystore nonce must be 12 bytes")
+    ints = ("iterations",) if kdf == "pbkdf2-sha256" else ("n", "r", "p")
+    for k in ints:
+        if type(data.get(k)) is not int:
+            raise KeystoreError(f"keystore parameter {k} must be an integer")
+    if kdf == "pbkdf2-sha256":
+        if not PBKDF2_RANGE[0] <= data["iterations"] <= PBKDF2_RANGE[1]:
+            raise KeystoreError("keystore iteration count is outside the accepted range")
+        return kdf
+    n, r, p = data["n"], data["r"], data["p"]
+    if not SCRYPT_N_RANGE[0] <= n <= SCRYPT_N_RANGE[1] or n & (n - 1):
+        raise KeystoreError("keystore scrypt cost N is outside the accepted range (or not a power of two)")
+    if not SCRYPT_R_RANGE[0] <= r <= SCRYPT_R_RANGE[1]:
+        raise KeystoreError("keystore scrypt block size r is outside the accepted range")
+    if not SCRYPT_P_RANGE[0] <= p <= SCRYPT_P_RANGE[1]:
+        raise KeystoreError("keystore scrypt parallelism p is outside the accepted range")
+    if 128 * n * r > SCRYPT_MAX_MEMORY:
+        raise KeystoreError("keystore scrypt parameters would need more than 256 MiB of memory")
+    return kdf
 
 
 def _derive(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:
@@ -63,19 +103,18 @@ def seal(key: KeyPair, passphrase: str, kdf: str = "scrypt") -> dict:
 
 def open_sealed(data: dict, passphrase: str) -> KeyPair:
     try:
+        if not isinstance(data, dict):
+            raise KeystoreError("malformed keystore")
+        kdf = _check_params(data)                       # every bound before any derivation
         salt = bytes.fromhex(data["salt"])
-        if data.get("kdf", "scrypt") == "pbkdf2-sha256":
-            if not 100_000 <= int(data["iterations"]) <= 10_000_000:
-                raise KeystoreError("keystore iteration count is outside the accepted range")
-            k = _derive_pbkdf2(passphrase, salt, int(data["iterations"]))
+        if kdf == "pbkdf2-sha256":
+            k = _derive_pbkdf2(passphrase, salt, data["iterations"])
         else:
-            if not 2 ** 14 <= int(data["n"]) <= 2 ** 20:
-                raise KeystoreError("keystore scrypt cost is outside the accepted range")
-            k = _derive(passphrase, salt, int(data["n"]), int(data["r"]), int(data["p"]))
+            k = _derive(passphrase, salt, data["n"], data["r"], data["p"])
         seed = AESGCM(k).decrypt(bytes.fromhex(data["nonce"]), bytes.fromhex(data["ciphertext"]), bytes.fromhex(data["address"]))
     except KeystoreError:
         raise
-    except (KeyError, ValueError) as err:
+    except (KeyError, ValueError, TypeError) as err:
         raise KeystoreError(f"malformed keystore: {err}") from None
     except Exception:  # noqa: BLE001  (cryptography raises InvalidTag)
         raise KeystoreError("wrong passphrase, or the keystore was altered") from None

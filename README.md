@@ -12,6 +12,19 @@
 
 **Signed legal contracts and verifiable public accounts on a ledger nobody owns.** *Juris* is Latin for "of law", as in jurisprudence.
 
+> **Status: research prototype, version 0.26.0. Not production-ready.** An external security audit of v0.25.0 reported 4 critical and 18 high-priority findings. Every one we could reproduce is fixed and has a regression test; others are blocked on evidence we do not have. Read [SECURITY.md](SECURITY.md) and [the findings register](docs/SECURITY_FINDINGS.md) before using this for anything but study. Do not put real money, real personal data or real legal evidence on it.
+
+### Start here (five minutes)
+
+```bash
+git clone https://github.com/Normansrule/juris-ledger.git && cd juris-ledger
+python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
+jurisledger demo --out demo && jurisledger audit demo/chain.json   # build a sample ledger, then re-verify it
+jurisledger all                                                     # run every experiment; each claim prints PASS or FAIL
+```
+
+Then open [the explainer](https://normansrule.github.io/juris-ledger/) to watch the same ideas animated, or read [Quick start](#quick-start) for the rest.
+
 JurisLedger is a research framework with working code. It asks one question and answers it with running software instead of slogans:
 
 > *If contracts and payments were recorded on a ledger that no single institution controls, could agreements become harder to forge and easier to prove, could fraud become harder to hide, and could a country measure its own economy more truthfully — without handing anyone a new kind of central power?*
@@ -54,7 +67,7 @@ python -m jurisledger all
 ALL CHECKS PASSED          (127 claims)
 ```
 
-> **Status:** research prototype, version 0.23. It is a laboratory, not a payment system. Do not put real money or real personal data on it. The [limitations](#what-this-does-not-solve) section is part of the result, not fine print.
+> **Status:** research prototype, version 0.26.0. It is a laboratory, not a payment system. The [limitations](#what-this-does-not-solve) section and [SECURITY.md](SECURITY.md) are part of the result, not fine print.
 
 ---
 
@@ -137,12 +150,13 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 jurisledger demo --out demo        # builds a sample ledger; then open demo/register.html in a browser
-jurisledger audit demo/chain.json  # re-verify the whole ledger from its founding record
+jurisledger audit demo/chain.json  # re-verify the whole ledger; prints the founding record's fingerprint
+jurisledger audit demo/chain.json --genesis demo/genesis.json   # ...and checks it against one you trust
 jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
 jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
 jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
 jurisledger all                    # run all thirteen experiments (127 claims)
-python -m pytest                   # 189 tests; every printed claim is also asserted
+python -m pytest                   # the full suite; every printed claim is also asserted
 ```
 
 The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
@@ -409,6 +423,9 @@ examples/          quickstart.py
 
 | Document | Contents |
 |---|---|
+| [`SECURITY.md`](SECURITY.md) | Status, how to report a vulnerability, what the audit found and the production-readiness decision |
+| [`docs/SECURITY_FINDINGS.md`](docs/SECURITY_FINDINGS.md) | Every audit finding: status, files, regression test, before/after evidence, remaining risk |
+| [`docs/CANONICAL.md`](docs/CANONICAL.md) | The canonical JSON contract every implementation must follow (with test vectors) |
 | [`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md) | WCAG 2.1 AA: the automated audit of every page (0 problems), what it fixed, what it cannot check |
 | [`docs/DATA.md`](docs/DATA.md) | The SQLite index: commands, tables, why it can be trusted, measured speed |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | Running validators on separate machines: `jurisledger init`, per-machine folders, operations, a two-machine exercise |

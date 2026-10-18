@@ -4,8 +4,10 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 require("../../site/verify.js");
 const [ev, vals] = process.argv.slice(2);
-const bundle = JSON.parse(readFileSync(ev, "utf8"));
+let bundle;
+try { bundle = globalThis.JurisVerify.parseJSON(readFileSync(ev, "utf8")); }
+catch (e) { console.log(JSON.stringify({ valid: false, problems: [String(e.message)], fully_signed: false, unsigned: [] })); process.exit(0); }
 const v = JSON.parse(readFileSync(vals, "utf8"));
 const report = await globalThis.JurisVerify.verifyBundle(bundle, Array.isArray(v) ? v : v.validators);
 console.log(JSON.stringify({ valid: report.valid, problems: report.problems, fully_signed: report.fully_signed,
-  prose_matches: report.prose_matches, title: report.title, n: report.timeline.length }));
+  prose_matches: report.prose_matches, title: report.title, n: report.timeline.length, unsigned: report.unsigned }));

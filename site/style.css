@@ -97,3 +97,11 @@ footer{padding:3rem 0 5rem;color:var(--ink-2);font-size:.95rem}
 
 .warn,.status.warn{color:var(--amber-ink)}
 .inactive{background:var(--wash);border-radius:10px;padding:.8rem}
+/* Phone widths (audit: mobile layout).  Grid children may shrink below their content, form controls and
+   long hashes never push the page sideways, and wide tables scroll inside themselves. */
+.stage>*,.hero>*,.folio .head>*{min-width:0}
+input,select,textarea,button{max-width:100%;box-sizing:border-box}
+code,pre,.caption{overflow-wrap:anywhere}
+@media (max-width:560px){.wrap{padding-left:16px;padding-right:16px}table{display:block;overflow-x:auto;max-width:100%}}
+@media (max-width:560px){.figs{grid-template-columns:1fr}.figs div{display:flex;justify-content:space-between;align-items:baseline;gap:.6rem}.figs b{font-size:1.25rem}
+  .bits{grid-template-columns:repeat(8,minmax(0,1fr))}.bits b{min-width:0}}

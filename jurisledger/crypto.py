@@ -28,28 +28,72 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 # --------------------------------------------------------------------------- #
 # Serialisation and hashing
 # --------------------------------------------------------------------------- #
-def canonical(obj: Any) -> bytes:
-    """Deterministic JSON encoding: sorted keys, no whitespace, UTF-8.
+MAX_SAFE_INTEGER = 2 ** 53 - 1          # the portable contract: every implementation represents these exactly
 
-    Only ints, strings, bools, None, lists and dicts are allowed.  Floats are
-    rejected because their textual form is not portable across platforms --
-    all money amounts in JurisLedger are integers (minor currency units, "cents").
+
+def canonical(obj: Any, portable: bool = False) -> bytes:
+    """Deterministic JSON encoding: sorted keys (by code point), no whitespace, UTF-8.  See docs/CANONICAL.md.
+
+    Only ints, strings, bools, None, lists and dicts are allowed; floats are rejected because their
+    textual form is not portable -- all money amounts are integers (minor units, "cents").
+
+    Two levels, on purpose (audit H10):
+
+    * ``portable=False`` (hashing): reproduces every byte the ledger has ever committed to, so
+      historical blocks, transaction identifiers and evidence keep verifying unchanged.
+    * ``portable=True`` (admission): additionally requires integers within +/-(2^53 - 1), the
+      range a JavaScript verifier represents exactly.  New signatures, network input and
+      protocol-2 state transitions are held to this; see :func:`check_portable`.
     """
-    _reject_floats(obj)
+    _check_canonical(obj, portable)
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
-def _reject_floats(obj: Any) -> None:
+def check_portable(obj: Any) -> None:
+    """Raise ValueError unless every implementation (Python, the browser) encodes ``obj`` identically."""
+    _check_canonical(obj, True)
+
+
+def is_portable(obj: Any) -> bool:
+    try:
+        check_portable(obj)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _check_canonical(obj: Any, portable: bool) -> None:
+    if isinstance(obj, bool) or obj is None:
+        return
     if isinstance(obj, float):
         raise TypeError("floats are not allowed in canonical data; use integer minor units")
-    if isinstance(obj, dict):
+    if isinstance(obj, int):
+        if portable and not -MAX_SAFE_INTEGER <= obj <= MAX_SAFE_INTEGER:
+            raise ValueError("integers in portable canonical data must lie within +/-(2^53 - 1)")
+    elif isinstance(obj, str):
+        _check_text(obj)
+    elif isinstance(obj, dict):
         for k, v in obj.items():
             if not isinstance(k, str):
                 raise TypeError("canonical dict keys must be strings")
-            _reject_floats(v)
+            _check_text(k)
+            _check_canonical(v, portable)
     elif isinstance(obj, (list, tuple)):
         for v in obj:
-            _reject_floats(v)
+            _check_canonical(v, portable)
+    else:
+        raise TypeError(f"{type(obj).__name__} is not allowed in canonical data")
+
+
+def _check_text(s: str) -> None:
+    try:
+        s.encode("utf-8")                          # v0.25.0 failed here too (UnicodeEncodeError), just later
+    except UnicodeEncodeError:
+        raise ValueError("strings in canonical data must be valid Unicode (no lone surrogates)") from None
+
+
+def _reject_floats(obj: Any) -> None:          # the old name, kept for any external caller
+    _check_canonical(obj, False)
 
 
 def sha256_hex(data: bytes) -> str:

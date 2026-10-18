@@ -31,7 +31,8 @@ def main(axe_path: str) -> int:
         browser = browser_ = pw.chromium.launch()
         for scheme in ("light", "dark"):
             for name, url, click in targets:
-                page = browser.new_page(viewport={"width": 1280, "height": 900}, color_scheme=scheme)
+                page = browser.new_page(viewport={"width": 1280, "height": 900}, color_scheme=scheme,
+                                        bypass_csp=True)   # the audit injects axe-core; the pages forbid that, rightly
                 page.goto(url)
                 page.wait_for_timeout(600)
                 if click:

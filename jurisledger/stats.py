@@ -137,25 +137,49 @@ def laplace(rng: random.Random, scale: float) -> float:
     return -scale * math.copysign(1.0, u) * math.log(1 - 2 * abs(u))
 
 
+def two_sided_geometric(rng: random.Random, scale: float) -> int:
+    """Integer ("discrete Laplace") noise with P(k) proportional to exp(-|k| / scale).
+
+    Integer noise on integer totals avoids the floating-point attacks on textbook Laplace
+    sampling (Mironov 2012); the difference of two geometric variables has this distribution."""
+    if scale <= 0:
+        return 0
+    q = math.exp(-1.0 / scale)                       # P(geometric >= k) = q^k
+
+    def geometric() -> int:
+        u = 1.0 - rng.random()                       # (0, 1]
+        return int(math.floor(math.log(u) / math.log(q))) if q > 0 else 0
+    return geometric() - geometric()
+
+
 def private_sector_release(report: GDPReport, epsilon: float, clip: int, k_min: int = 3,
-                           seed: int = 0) -> Dict[str, Optional[float]]:
+                           seed: Optional[int] = None, count_share: float = 0.2) -> Dict[str, Optional[int]]:
     """Sector value added with small-cell suppression and differential privacy.
 
-    * Sectors with fewer than ``k_min`` firms are suppressed (``None``), the rule
-      statistical offices already use to stop a single firm being identified.
-    * Each firm's contribution is clipped to ``[-clip, clip]`` so one firm can
-      change a sector total by at most ``clip``; Laplace noise of scale
-      ``clip / epsilon`` then gives epsilon-differential privacy (Dwork et al. 2006).
+    * Each firm's contribution is clipped to ``[-clip, clip]``, so adding or removing one
+      firm changes a sector total by at most ``clip``.
+    * Suppression is decided on a **noisy** firm count (audit H6): a deterministic "fewer than
+      k_min firms" rule distinguishes two ledgers that differ by one firm with certainty, which
+      no differentially private mechanism may do.  ``count_share`` of the budget goes to the count.
+    * The total gets integer noise of scale ``clip / epsilon_total``.  By sequential composition
+      the release as a whole is ``epsilon``-differentially private per firm (Dwork et al. 2006).
+    * Noise comes from the operating system's cryptographic generator.  ``seed`` makes the
+      output reproducible **for tests and experiments only**: a seeded release is not private,
+      because anyone who knows the seed can subtract the noise.
     """
-    rng = random.Random(seed)
+    if not 0 < count_share < 1 or epsilon <= 0:
+        raise ValueError("need epsilon > 0 and 0 < count_share < 1")
+    rng: random.Random = random.Random(seed) if seed is not None else random.SystemRandom()
+    eps_count, eps_total = epsilon * count_share, epsilon * (1 - count_share)
     counts = report.firms_per_sector()
-    totals: Dict[str, float] = {}
+    totals: Dict[str, int] = {}
     for f, va in report.value_added().items():
-        s = report.sector_of[f]
-        totals[s] = totals.get(s, 0.0) + max(-clip, min(clip, va))
-    out: Dict[str, Optional[float]] = {}
-    for s, total in sorted(totals.items()):
-        out[s] = None if counts[s] < k_min else total + laplace(rng, clip / epsilon)
+        sec = report.sector_of[f]
+        totals[sec] = totals.get(sec, 0) + max(-clip, min(clip, va))
+    out: Dict[str, Optional[int]] = {}
+    for sec in sorted(set(counts) | set(totals)):
+        noisy_n = counts.get(sec, 0) + two_sided_geometric(rng, 1 / eps_count)
+        out[sec] = None if noisy_n < k_min else totals.get(sec, 0) + two_sided_geometric(rng, clip / eps_total)
     return out
 
 

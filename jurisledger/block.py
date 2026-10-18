@@ -28,8 +28,14 @@ class BlockHeader:
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "BlockHeader":
-        return BlockHeader(d["chain_id"], d["height"], d["round"], d["prev_hash"],
-                           d["tx_root"], d["state_root"], d["proposer"], d.get("timestamp", 0))
+        h = BlockHeader(d["chain_id"], d["height"], d["round"], d["prev_hash"],
+                        d["tx_root"], d["state_root"], d["proposer"], d.get("timestamp", 0))
+        # Types only (every header ever produced had them): a string timestamp from a hostile proposer
+        # used to raise TypeError deep inside consensus (0.26 review of F01).
+        if not all(type(v) is int for v in (h.height, h.round, h.timestamp)) or \
+                not all(isinstance(v, str) for v in (h.chain_id, h.prev_hash, h.tx_root, h.state_root, h.proposer)):
+            raise ValueError("malformed block header")
+        return h
 
     @property
     def hash(self) -> str:
@@ -78,4 +84,4 @@ class Block:
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Block":
         return Block(BlockHeader.from_dict(d["header"]),
-                     [Transaction.from_dict(t) for t in d["txs"]], dict(d["votes"]), d.get("commit_round"))
+                     [Transaction.from_dict(t, strict=False) for t in d["txs"]], dict(d["votes"]), d.get("commit_round"))

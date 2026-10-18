@@ -71,6 +71,17 @@ def wait_height(client: Client, height: int, timeout: float) -> Dict[str, Any]:
     return st
 
 
+def same_history(chains: List[Any]) -> bool:
+    """Do these copies agree?  Compared at the highest height ALL of them hold: two exports taken a
+    moment apart can differ by a block that was finalised in between, which is not disagreement.
+    (v0.25.0 compared the latest state roots, which made the cluster test intermittently fail.)"""
+    h = min(c.height for c in chains)
+    if h == 0:
+        return True
+    hashes = {c.blocks[h - c.base_height - 1].hash for c in chains}
+    return len(hashes) == 1
+
+
 def run(out_dir: str, n: int = 4, log: Any = print) -> Dict[str, Any]:
     out = Path(out_dir)
     setup = write_cluster_files(out, n)
@@ -102,11 +113,12 @@ def run(out_dir: str, n: int = 4, log: Any = print) -> Dict[str, Any]:
         result["txs_finalised"] = all(t.txid in got for t in txs)
         log(f"  3 transactions sent to 3 different validators, all finalised: {result['txs_finalised']}")
 
-        roots = set()
+        copies, lagging = [], False
         for c in clients:
             s = wait_height(c, chain.height, 15)
-            roots.add(c.export().state.root() if s.get("height", 0) >= chain.height else "lagging")
-        result["all_agree"] = len(roots) == 1 and "lagging" not in roots
+            lagging |= s.get("height", 0) < chain.height
+            copies.append(c.export())
+        result["all_agree"] = not lagging and same_history(copies)
         log(f"  all {n} validators hold the same state: {result['all_agree']}")
 
         victim = n - 1
@@ -124,8 +136,7 @@ def run(out_dir: str, n: int = 4, log: Any = print) -> Dict[str, Any]:
         target = clients[0].status()["height"]
         st = wait_height(clients[victim], target, 40)
         caught_up = st.get("height", 0) >= target
-        same = caught_up and clients[victim].export().state.root() == clients[0].export().state.root() \
-            if caught_up else False
+        same = caught_up and same_history([clients[victim].export(), clients[0].export()])
         result["rejoined"] = caught_up and same
         log(f"  validator {victim} restarted from its store and caught up to block {st.get('height')}: {result['rejoined']}")
         result["height"] = clients[0].status()["height"]

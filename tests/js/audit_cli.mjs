@@ -2,5 +2,5 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 createRequire(import.meta.url)("../../site/verify.js");
-const r = await globalThis.JurisVerify.auditChain(JSON.parse(readFileSync(process.argv[2], "utf8")));
+const r = await globalThis.JurisVerify.auditChain(globalThis.JurisVerify.parseJSON(readFileSync(process.argv[2], "utf8")));
 console.log(JSON.stringify(r));

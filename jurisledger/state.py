@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import privacy as PV
 from . import tx as T
 from .block import BlockHeader, vote_message
-from .crypto import hash_obj, sha256_hex, canonical, verify
+from .crypto import hash_obj, is_portable, sha256_hex, canonical, verify
 
 
 class InvalidTx(Exception):
@@ -68,6 +68,9 @@ OPEN, CLOSED, WITHDRAWN = "OPEN", "CLOSED", "WITHDRAWN"
 AWARD_OUTCOMES = {"UPHELD", "DISMISSED", "SETTLED"}
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+PROTOCOLS = {1, 2}
+MAX_INCOMING = 256                    # protocol 2: unclaimed confidential payments one account may hold
+MAX_INCOMING_PER_SENDER = 8           # ...of which at most this many from any one payer (0.26 review: inbox flooding)
 
 
 def quorum(n_validators: int) -> int:
@@ -100,6 +103,10 @@ class State:
         self.policy: Dict[str, int] = {}                   # empty = open network (no identity rules)
         self.recoveries: Dict[str, Dict[str, Any]] = {}    # subject -> pending lost-key recovery
         self._quota_height, self._quota_counts = -1, {}    # transient, per block: not part of the state root
+        # Protocol version, fixed at genesis.  1 = the rules every ledger before v0.26 was built with;
+        # 2 = the audited rules (claim-based confidential crediting, award limits against effective
+        # values).  The version is part of the state root only when it is not 1, so v1 roots are unchanged.
+        self.protocol: int = 1
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -117,6 +124,8 @@ class State:
             s.issuers.append(i["address"])
             s.accounts[i["address"]] = {"name": i["name"], "role": ISSUER, "sector": "", "balance": 0, "nonce": 0}
         s.policy = {k: int(v) for k, v in genesis.get("policy", {}).items()}
+        s.protocol = int(genesis.get("protocol_version", 1))
+        _need(s.protocol in PROTOCOLS, f"unsupported protocol_version {s.protocol}")
         for v in genesis["validators"]:
             s.validators.append(v)
             s.accounts.setdefault(v, {"name": f"validator-{v[:8]}", "role": VALIDATOR,
@@ -134,13 +143,19 @@ class State:
         """The complete state as plain data.  ``root()`` of the restored state must equal
         the ``state_root`` of the block it was taken after; the access log is checked
         against its rolling digest."""
-        return {"chain_id": self.chain_id, **{f: copy.deepcopy(getattr(self, f)) for f in self.FIELDS}}
+        d = {"chain_id": self.chain_id, **{f: copy.deepcopy(getattr(self, f)) for f in self.FIELDS}}
+        if self.protocol != 1:
+            d["protocol"] = self.protocol
+        return d
 
     @staticmethod
     def from_snapshot(d: Dict[str, Any]) -> "State":
         s = State(d["chain_id"])
         for f in State.FIELDS:
             setattr(s, f, copy.deepcopy(d[f]))
+        s.protocol = int(d.get("protocol", 1))
+        if s.protocol not in PROTOCOLS:
+            raise ValueError(f"unsupported protocol {s.protocol}")
         digest = sha256_hex(b"jurisledger-access-log")
         for entry in s.access_log:
             digest = sha256_hex(bytes.fromhex(digest) + canonical(entry))
@@ -149,13 +164,16 @@ class State:
         return s
 
     def root(self) -> str:
-        return hash_obj({
+        d = {
             "accounts": self.accounts, "contracts": self.contracts, "disputes": self.disputes,
             "validators": self.validators, "slashed": self.slashed,
             "gov_votes": self.gov_votes, "evidence": self.evidence_seen,
             "issuers": self.issuers, "policy": self.policy, "recoveries": self.recoveries,
             "access_digest": self.access_digest,
-        })
+        }
+        if self.protocol != 1:
+            d["protocol"] = self.protocol                  # absent for v1: every v1 root is unchanged
+        return hash_obj(d)
 
     def is_resident(self, address: str) -> bool:
         return self.accounts[address]["role"] != FOREIGN
@@ -166,6 +184,8 @@ class State:
         _need(tx.kind in T.KINDS, f"unknown transaction kind {tx.kind}")
         _need(isinstance(tx.nonce, int) and tx.nonce >= 0, "bad nonce")
         _need(tx.signature_valid(), "invalid signature")
+        if self.protocol >= 2:
+            _need(is_portable(tx.payload), "payload is not portable canonical data (integers beyond 2^53 - 1)")
         cap = self.policy.get("max_tx_per_block", 0)
         if cap:
             # Spam control without fees: an account may put at most `cap` transactions in one
@@ -200,6 +220,7 @@ class State:
             T.SHIELD: self._shield,
             T.CONFIDENTIAL_PAYMENT: self._confidential_payment,
             T.UNSHIELD: self._unshield,
+            T.CONFIDENTIAL_CLAIM: self._confidential_claim,
             T.ATTEST: self._attest,
             T.ATTEST_REVOKE: self._attest_revoke,
             T.KEY_ROTATE: self._key_rotate,
@@ -209,7 +230,16 @@ class State:
             T.EVIDENCE: self._evidence,
             T.VALIDATOR_VOTE: self._validator_vote,
         }[tx.kind]
-        handler(tx, height)               # validates fully before mutating
+        if not isinstance(tx.payload, dict) and tx.kind != T.RECOVERY_VETO:   # the one kind that never reads it
+            raise InvalidTx("payload must be an object")
+        try:
+            handler(tx, height)           # validates fully before mutating
+        except InvalidTx:
+            raise
+        except (TypeError, KeyError, AttributeError, ValueError, IndexError) as err:
+            # A wrongly typed field reached a handler.  Before 0.26 this escaped as an exception and stopped
+            # whatever was executing the block; it is simply an invalid transaction (0.26 review of F01).
+            raise InvalidTx(f"malformed {tx.kind} payload ({type(err).__name__})") from None
         acct["nonce"] += 1
         self._count_quota(tx.sender)
 
@@ -457,6 +487,15 @@ class State:
             _need(isinstance(a, dict) and a.get("obligation") in d["obligations"] and a["obligation"] not in clean,
                   "an award may only adjust obligations that are in dispute, once each")
             ob, adj = originals[a["obligation"]], {"height": height, "dispute_id": d["id"]}
+            if self.protocol >= 2:
+                # Audit H9: limits apply to the EFFECTIVE terms after earlier awards, not the original
+                # ones, and earlier relief persists - otherwise a second award could raise the debt again,
+                # bring a deadline forward or undo a waiver.
+                prior = c["adjustments"].get(a["obligation"], {})
+                ob = {**ob, **{k: prior[k] for k in ("amount", "due_height") if k in prior}}
+                _need(not prior.get("waived") or set(a) <= {"obligation", "waived"},
+                      "the obligation was waived by an earlier award; it cannot be reinstated")
+                adj = {**{k: v for k, v in prior.items() if k in ("amount", "due_height", "waived")}, **adj}
             if "amount" in a:
                 _need(isinstance(a["amount"], int) and not isinstance(a["amount"], bool)
                       and 0 < a["amount"] <= ob["amount"], "an award cannot increase what is owed")
@@ -468,7 +507,10 @@ class State:
             if "waived" in a:
                 _need(a["waived"] is True, "waived must be true when present")
                 adj["waived"] = True
-            _need(len(adj) > 2, "empty adjustment")
+            if self.protocol >= 2:
+                _need(bool(set(a) & {"amount", "due_height", "waived"}), "empty adjustment")
+            else:
+                _need(len(adj) > 2, "empty adjustment")             # the v1 rule, unchanged
             clean[a["obligation"]] = adj
         c["adjustments"].update(clean)
         d["status"], d["closed_height"] = CLOSED, height
@@ -543,7 +585,38 @@ class State:
         _need(self._range_ok(remaining, p.get("proof_remaining")),
               "range proof on the remaining balance is invalid (overspending or a negative amount)")
         self._set_hidden(tx.sender, remaining)
-        self._set_hidden(to, self.hidden(to) + amount_c)
+        if self.protocol >= 2:
+            # Audit H1: crediting is the recipient's decision.  The payment waits in their inbox until
+            # they accept it (they can open it) or refuse it (it goes back to the payer, who can).
+            inbox = self.accounts[to].setdefault("incoming", {})
+            _need(len(inbox) < MAX_INCOMING, "the recipient's confidential inbox is full")
+            _need(sum(1 for e in inbox.values() if e["from"] == tx.sender) < MAX_INCOMING_PER_SENDER,
+                  "too many unclaimed confidential payments from this payer to this recipient")
+            inbox[tx.txid] = {"from": tx.sender, "commitment": PV.commitment_hex(amount_c), "height": height}
+        else:
+            self._set_hidden(to, self.hidden(to) + amount_c)   # v1: credited unconditionally (see SECURITY_FINDINGS H1)
+
+    def _confidential_claim(self, tx: T.Transaction, height: int) -> None:
+        _need(self.protocol >= 2, "CONFIDENTIAL_CLAIM needs protocol_version 2")
+        p = tx.payload
+        inbox = self.accounts[tx.sender].get("incoming", {})
+        pid, accept = p.get("payment"), p.get("accept")
+        _need(isinstance(pid, str) and pid in inbox, "no such incoming confidential payment")
+        _need(isinstance(accept, bool), "accept must be true or false")
+        entry = inbox.pop(pid)
+        if not inbox:
+            self.accounts[tx.sender].pop("incoming", None)
+        c = PV.commitment_from_hex(entry["commitment"])
+        if accept:
+            self._set_hidden(tx.sender, self.hidden(tx.sender) + c)
+        else:                                                   # back to the payer (or whoever holds its key now)
+            back = entry["from"]
+            for _ in range(100):
+                nxt = self.accounts.get(back, {}).get("successor")
+                if not nxt:
+                    break
+                back = nxt
+            self._set_hidden(back, self.hidden(back) + c)
 
     def _unshield(self, tx: T.Transaction, height: int) -> None:
         p, acct = tx.payload, self.accounts[tx.sender]
@@ -585,6 +658,11 @@ class State:
         _need(subject is not None and tx.sender in subject.get("attestations", {}),
               "no attestation by this issuer to revoke")
         del subject["attestations"][tx.sender]
+        r = self.recoveries.get(tx.payload["subject"])
+        if self.protocol >= 2 and r is not None and tx.sender in r["issuers"]:
+            r["issuers"].remove(tx.sender)                  # the revoking issuer withdraws its request too
+            if len(r["issuers"]) < max(1, self.policy.get("min_attestations", 1)):
+                r["effective_height"] = None                # approval lapses; the waiting period restarts
 
     # -- keys: rotation by the owner, recovery through issuers + waiting period
     def _migrate(self, old: str, new: str, height: int) -> None:
@@ -642,6 +720,15 @@ class State:
         _need(tx.payload.get("new_key") == r["new_key"], "new_key does not match the approved recovery")
         _need(height >= r["effective_height"],
               f"the waiting period runs until block {r['effective_height']} so the owner can veto")
+        if self.protocol >= 2:
+            # Audit H3: the authority must still exist when the recovery completes.  Count only issuers
+            # that are still accredited AND still attest the subject; a revocation during the waiting
+            # period therefore cancels the recovery's approval.
+            still = [i for i in r["issuers"] if i in self.issuers
+                     and i in self.accounts[subject].get("attestations", {})]
+            need = max(1, self.policy.get("min_attestations", 1))
+            _need(len(still) >= need, f"the recovery's approval lapsed: {len(still)} of its issuers still "
+                                      f"attest this account, {need} required")
         self._check_new_key(r["new_key"])
         self._migrate(subject, r["new_key"], height)
 

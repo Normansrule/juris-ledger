@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "juris-ledger"
-version = "0.25.0"
+version = "0.26.0"
 description = "Research framework: signed legal contracts, offline-verifiable evidence, fraud detection and verifiable national accounts on a Byzantine-fault-tolerant ledger"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Aleksander Norman" }]
-dependencies = ["cryptography>=41"]
+dependencies = ["cryptography>=50.0.0"]   # floor = lowest release with no published advisory (pip-audit, October 2026)
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "pytest-timeout>=2"]

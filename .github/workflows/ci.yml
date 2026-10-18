@@ -15,9 +15,20 @@ jobs:
         with:
           node-version: "22"
       - run: pip install -e ".[dev]"
+      - name: browser for the security tests (script injection, CSP, stale data, phone layout)
+        run: pip install playwright && python -m playwright install --with-deps chromium
       - run: python -m pytest -q
+      - name: dependency scan of the runtime closure (fails on any published advisory)
+        run: pip install pip-audit && pip-audit --strict --progress-spinner off -r <(pip freeze --exclude-editable | grep -iE '^(cryptography|cffi|pycparser)==')
+        shell: bash
+      - name: every audit reproduction must be SAFE
+        run: python tools/audit_repro.py
+      - name: content security policies match the shipped scripts
+        run: python tools/csp.py --check
       - name: invariant fuzzing (25,000 random transactions)
         run: python -m jurisledger fuzz --runs 50 --steps 500
       - run: python -m jurisledger all
       - run: jurisledger cluster --out cluster
-      - run: jurisledger demo --out demo && jurisledger audit demo/chain.json && jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
+      - run: jurisledger demo --out demo && jurisledger audit demo/chain.json --genesis demo/genesis.json && jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
+      - name: release manifest (sha256 of every shipped file)
+        run: python tools/manifest.py -o MANIFEST.sha256.json && python tools/manifest.py --check MANIFEST.sha256.json

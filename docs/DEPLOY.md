@@ -50,7 +50,7 @@ Pin the validator you talk to with `--pin <its address from genesis.json>` when 
 | Task | How |
 |---|---|
 | A validator crashed | run `start.sh` again; it resumes from `store/` and asks peers for the blocks it missed |
-| A validator's disk is lost | start it with an empty `store/`: it asks peers for blocks, and if they have pruned them it receives a certified snapshot instead, checks its validator signatures and state digest, and continues from there |
+| A validator's disk is lost | restore `store/sign_state.json` from backup if you have it (if not, see *Signing journal* below before starting), then start it with an otherwise empty `store/`: it asks peers for blocks, and if they have pruned them it receives a certified snapshot instead, checks its validator signatures and state digest, and continues from there |
 | The disk is filling up | start validators with `./start.sh --prune-every 1000` (keeps 1,000 to 2,000 recent blocks; older ones move, gzip-compressed, to `store/archive/`), or stop one and run `jurisledger prune --store store --keep 1000`. Keep at least one archive node that never runs with `--no-archive`: it is the ledger's full legal history |
 | Someone starts a second validator on the same store by mistake | it is refused: a running validator holds an exclusive lock on the store |
 | Limit spam | vote `SET_POLICY` `max_tx_per_block` (for example 50): no account can place more than that many transactions in one block |
@@ -58,6 +58,9 @@ Pin the validator you talk to with `--pin <its address from genesis.json>` when 
 | Change the identity threshold or payment cap | each validator sends a `VALIDATOR_VOTE` with `SET_POLICY`; effective when more than two thirds agree |
 | Add or remove a validator or issuer | the same vote with `ADD` / `REMOVE` / `ADD_ISSUER` / `REMOVE_ISSUER` |
 | Publish the register | `jurisledger register chain.json -o register.html` and host the file anywhere; it is self-contained |
+| Signing journal | `store/sign_state.json` records the last height, round and step this key signed (fsync'ed before each signature leaves). **Back it up with the store, never copy it to a second running machine, and never run one key on two machines.** If it is damaged the validator refuses to start: restore it from backup, or delete it only after the network has finalised beyond the last height this key could have voted on (`jurisledger status` on a peer). Deleting it earlier is how honest validators double-sign. |
+| A pruned store will not open after a validator-set change (`UntrustedSnapshot`) | the snapshot's certifiers are not the genesis validators and nothing outside the snapshot vouches for them. Start with `--trust-validators current.json` (a JSON list of the keys you trust, obtained from the operators, not from the store), keep `store/archive/`, or empty the store and re-sync from peers. A running validator writes `store/anchor.json`, signed by its own key, so this only happens after a disk edit or on a copied store |
+| New network | `jurisledger init` writes `"protocol_version": 2`, the audited rules (see [`SECURITY_FINDINGS.md`](SECURITY_FINDINGS.md)). Do not lower it |
 
 ## 5. Two-machine exercise on a desktop and a laptop
 

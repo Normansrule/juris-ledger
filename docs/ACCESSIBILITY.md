@@ -12,7 +12,7 @@ python tools/a11y_audit.py
 
 This loads the explainer, the explorer (with the demo ledger open), the dashboard, the wallet and a generated public register, in both light and dark colour schemes, and runs axe-core against every WCAG 2.1 A and AA rule it automates.
 
-**Result for 0.20.0: 0 problems on all ten page-and-scheme combinations.** The first run found 36, all fixed:
+**Result, re-run for 0.26.0 (after the security changes and the new phone-width rules): 0 problems on all ten page-and-scheme combinations.** The first run (0.20.0) found 36, all fixed:
 
 | found | fix |
 |---|---|

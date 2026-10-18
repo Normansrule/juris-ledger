@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-hS4f5ShwurUjzWAWB2+hDzlI9yb/aNi37RWoYz5av44='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>JurisLedger wallet — sign in your browser, carry it anywhere</title>
@@ -82,19 +83,21 @@ pre.tx{background:var(--wash);border-radius:8px;padding:.7rem;font-size:.75rem;m
   <p style="font-size:.9rem;color:var(--ink-2);margin-top:1.4rem">Signatures made here are byte-for-byte identical to <code>jurisledger</code>'s (tested on every commit); sealed key files open on both sides. Research prototype: do not hold anything of value with it.</p>
 </main>
 <footer><div class="wrap">JurisLedger is a research prototype under the MIT licence.</div></footer>
+<script src="safe.js"></script>
 <script src="verify.js"></script>
 <script src="wallet.js"></script>
 <script>
 (async () => {
 const $ = s => document.querySelector(s), W = window.JurisWallet, V = window.JurisVerify;
+const { html, raw } = window.JurisSafe;
+const HEX64 = /^[0-9a-f]{64}$/;
 const PURPOSES = ["FINAL_CONSUMPTION", "INTERMEDIATE", "INVESTMENT", "GOVERNMENT_PURCHASE", "EXPORT", "WAGES", "TAX", "TRANSFER", "FINANCIAL"];
-$("#purpose").innerHTML = PURPOSES.map(p => `<option value="${p}">${p.toLowerCase().replace(/_/g, " ")}</option>`).join("");
-const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+$("#purpose").innerHTML = html`${PURPOSES.map(p => html`<option value="${p}">${p.toLowerCase().replace(/_/g, " ")}</option>`)}`;
 let key = null, pendingFile = null, signed = null;
 if (!(await V.supported())) { $("#who").innerHTML = '<span class="bad">This browser has no Ed25519 in its Web Cryptography API. Use a current Chrome, Edge, Firefox or Safari, or the command-line wallet.</span>'; return; }
 
 function showKey() {
-  $("#who").innerHTML = `${W.identicon(key.address)}<div><strong>Key loaded</strong><br><code>${key.address}</code></div>`;
+  $("#who").innerHTML = html`${raw(W.identicon(key.address))}<div><strong>Key loaded</strong><br><code>${key.address}</code></div>`;
   ["#sealPass", "#saveKey", "#lookup", "#signBtn"].forEach(s => $(s).disabled = false);
   $("#env").classList.remove("sealed"); $("#txOut").hidden = true; $("#dlTx").disabled = true; $("#sigVerdict").textContent = "";
 }
@@ -105,13 +108,13 @@ $("#keyFile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   try { pendingFile = JSON.parse(await f.text()); } catch { $("#who").innerHTML = '<span class="bad">That file is not JSON.</span>'; return; }
   if (pendingFile.ciphertext) { $("#openPassRow").hidden = false; $("#openPass").focus(); $("#who").innerHTML = "<span>Sealed key file: type its passphrase and press Enter.</span>"; }
-  else { try { key = await W.open(pendingFile); showKey(); } catch (err) { $("#who").innerHTML = `<span class="bad">${esc(err.message)}</span>`; } }
+  else { try { key = await W.open(pendingFile); showKey(); } catch (err) { $("#who").innerHTML = html`<span class="bad">${err.message}</span>`; } }
 };
 $("#openPass").onkeydown = async e => {
   if (e.key !== "Enter") return;
   $("#who").innerHTML = "<span>Deriving the key (600,000 rounds of PBKDF2)…</span>";
   try { key = await W.open(pendingFile, $("#openPass").value); $("#openPass").value = ""; $("#openPassRow").hidden = true; showKey(); }
-  catch (err) { $("#who").innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+  catch (err) { $("#who").innerHTML = html`<span class="bad">${err.message}</span>`; }
 };
 $("#saveKey").onclick = async () => {
   try { const ks = await W.seal(key, $("#sealPass").value); $("#sealPass").value = ""; download(`key-${key.address.slice(0, 8)}.json`, ks); }
@@ -121,12 +124,16 @@ $("#lookup").onclick = async () => {
   const base = $("#api").value.replace(/\/$/, "");
   try {
     const a = await fetch(`${base}/api/account/${key.address}`).then(r => r.ok ? r.json() : Promise.reject(r.status));
-    $("#chain").value = a.chain_id; $("#nonce").value = a.next_nonce;
-    $("#acctCap").innerHTML = `<strong>${esc(a.name)}</strong> (${esc(a.role)}${a.sector ? ", " + esc(a.sector) : ""}). Next transaction number ${a.next_nonce}.`;
+    if (typeof a.chain_id === "string") $("#chain").value = a.chain_id;
+    const known = Number.isSafeInteger(a.next_nonce) && a.next_nonce >= 0;   // null: the API cannot know (audit H11)
+    $("#nonce").value = known ? a.next_nonce : "";
+    $("#acctCap").innerHTML = html`<strong>${a.name}</strong> (${a.role}${a.sector ? ", " + a.sector : ""}). ${known
+      ? html`Next transaction number ${a.next_nonce} <em>(from the API: unverified)</em>.`
+      : html`<span class="bad">The API cannot tell the next transaction number</span> (its index starts after this account's last transaction); fill it in from <code>jurisledger wallet balance</code>.`}`;
   } catch (e) {
     try { const st = await fetch(`${base}/api/status`).then(r => r.json()); $("#chain").value = st.chain_id; $("#nonce").value = 0;
       $("#acctCap").textContent = "This key is not on the ledger yet (number 0 is its registration)."; }
-    catch { $("#acctCap").innerHTML = `Could not reach <code>${esc(base)}</code>. Fill in the ledger name and transaction number yourself, or start <code>jurisledger api ledger.db</code>.`; }
+    catch { $("#acctCap").innerHTML = html`Could not reach <code>${base}</code>. Fill in the ledger name and transaction number yourself, or start <code>jurisledger api ledger.db</code>.`; }
   }
 };
 $("#signBtn").onclick = async () => {
@@ -134,17 +141,21 @@ $("#signBtn").onclick = async () => {
   let to = $("#to").value.trim();
   if (!(cents > 0)) return void ($("#sigVerdict").innerHTML = '<span class="bad">Enter an amount above zero.</span>');
   if (!(nonce >= 0) || !chain) return void ($("#sigVerdict").innerHTML = '<span class="bad">Fill in the ledger name and transaction number (or look up the account).</span>');
-  if (!/^[0-9a-f]{64}$/.test(to)) {
+  if (!HEX64.test(to)) {
+    // A name is resolved by the API, which this page does not verify.  Show the address it returned and
+    // make the user confirm it: a hostile API could otherwise redirect the payment.
     try { const a = await fetch(`${$("#api").value.replace(/\/$/, "")}/api/account/${encodeURIComponent(to)}`).then(r => r.ok ? r.json() : Promise.reject());
-      to = a.address; $("#to").value = to; }
+      if (!HEX64.test(a.address)) throw new Error("bad address");
+      $("#to").value = a.address;
+      return void ($("#sigVerdict").innerHTML = html`<span class="warn">The API says “${to}” is <code>${a.address}</code>.</span> Check that address with the recipient, then press Sign again.`); }
     catch { return void ($("#sigVerdict").innerHTML = '<span class="bad">Give the recipient as a 64-character address, or connect to an API that knows the name.</span>'); }
   }
   signed = await W.sign(key, chain, "PAYMENT", nonce, { to, amount: cents, purpose: $("#purpose").value });
   const ok = await V.verifyTx(signed), id = await V.txid(signed);
   $("#env").classList.remove("sealed"); void $("#env").offsetWidth; $("#env").classList.add("sealed");
-  $("#sigVerdict").innerHTML = ok ? `<span class="good">Signed and self-checked</span>` : '<span class="bad">Signature check failed</span>';
+  $("#sigVerdict").innerHTML = html`${ok ? html`<span class="good">Signed and self-checked</span>` : html`<span class="bad">Signature check failed</span>`}`;
   $("#txOut").hidden = false; $("#txOut").textContent = JSON.stringify(signed, null, 1); $("#dlTx").disabled = false;
-  $("#howTo").innerHTML = `Transaction <code>${id.slice(0, 16)}…</code>. Carry the file to any machine with the ledger and run<br><code>jurisledger submit signed-${id.slice(0, 8)}.json HOST:PORT</code>. Change one character of it and every validator will refuse it.`;
+  $("#howTo").innerHTML = html`Transaction <code>${id.slice(0, 16)}…</code>. Carry the file to any machine with the ledger and run<br><code>jurisledger submit signed-${id.slice(0, 8)}.json HOST:PORT</code>. Change one character of it and every validator will refuse it.`;
 };
 $("#dlTx").onclick = async () => signed && download(`signed-${(await V.txid(signed)).slice(0, 8)}.json`, signed);
 })();

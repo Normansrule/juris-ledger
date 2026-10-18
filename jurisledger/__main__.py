@@ -70,9 +70,17 @@ def run_experiments(names: list[str]) -> int:
     return 1 if failed else 0
 
 
-def cmd_audit(path: str) -> int:
+def cmd_audit(path: str, genesis_path: str | None = None) -> int:
+    from .crypto import hash_obj
     try:
-        chain = Chain.load(Path(path).read_text())
+        text = Path(path).read_text()
+        trusted = json.loads(Path(genesis_path).read_text()) if genesis_path else None
+        embedded = json.loads(text)["genesis"]
+        if trusted is not None and hash_obj(trusted) != hash_obj(embedded):
+            print(f"REJECTED. {path} starts from a different founding record than {genesis_path}:\n"
+                  f"  in the file   {hash_obj(embedded)}\n  you trust     {hash_obj(trusted)}")
+            return 1
+        chain = Chain.load(text, (trusted or {}).get("validators"))
     except InvalidBlock as err:
         print(f"REJECTED. The ledger in {path} does not verify: {err}")
         return 1
@@ -88,7 +96,20 @@ def cmd_audit(path: str) -> int:
         print(f"VERIFIED. {chain.height} blocks and {n_tx:,} transactions replayed from the founding record of "
               f"'{chain.chain_id}'.\nEvery signature, Merkle root, state digest and commit certificate checked.")
     print(f"State digest: {chain.state.root()}")
+    fp = hash_obj(chain.genesis)
+    if genesis_path:
+        print(f"Founding record {fp} matches the one you supplied ({genesis_path}).")
+    else:
+        print(f"Founding record fingerprint: {fp}\n"
+              f"This proves the file is internally consistent. It proves it is THE ledger only if this fingerprint "
+              f"matches one you obtained independently (from the operators' published genesis); "
+              f"check it automatically with --genesis GENESIS.json.")
     return 0
+
+
+def _trusted_list(path: str) -> list:
+    d = json.loads(Path(path).read_text())
+    return list(d["validators"] if isinstance(d, dict) else d)
 
 
 def cmd_verify(evidence_path: str, validators_path: str) -> int:
@@ -135,6 +156,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--until", type=int, default=None)
     ap.add_argument("--prune-every", type=int, default=0); ap.add_argument("--keep", type=int, default=1000)
     ap.add_argument("--no-archive", action="store_true")
+    ap.add_argument("--trust-validators", help="JSON list of validator keys you trust for a pruned store "
+                                               "whose snapshot was certified after a validator-set change")
     ap.add_argument("--to"); ap.add_argument("--amount"); ap.add_argument("--purpose")
     ap.add_argument("--name"); ap.add_argument("--role", default="household"); ap.add_argument("--sector", default="")
     ap.add_argument("--pin", help="validator address to pin the TLS certificate to")
@@ -162,7 +185,7 @@ def main(argv: list[str]) -> int:
               f"            jurisledger verify {made['evidence']} {made['validators']}")
         return 0
     if cmd == "audit" and len(args.paths) == 1:
-        return cmd_audit(args.paths[0])
+        return cmd_audit(args.paths[0], args.genesis)
     if cmd == "verify" and len(args.paths) == 2:
         return cmd_verify(*args.paths)
     if cmd == "register" and len(args.paths) == 1:
@@ -201,7 +224,8 @@ def main(argv: list[str]) -> int:
         from .storage import StoreBusy
         try:
             serve(key, genesis, peers, args.store, listen, until_height=args.until,
-                  log=lambda m: print(m, flush=True), prune_every=args.prune_every, keep_archive=not args.no_archive)
+                  log=lambda m: print(m, flush=True), prune_every=args.prune_every, keep_archive=not args.no_archive,
+                  trusted_validators=_trusted_list(args.trust_validators) if args.trust_validators else None)
         except StoreBusy as err:
             print(f"REFUSED. {err}"); return 1
         return 0
@@ -290,6 +314,8 @@ def main(argv: list[str]) -> int:
         if not args.store or not BlockStore(args.store).genesis_path.exists():
             print("prune what? give --store DIR (a validator's store directory)"); return 2
         st = BlockStore(args.store)
+        if args.trust_validators:
+            st.trusted_validators = _trusted_list(args.trust_validators)
         try:
             st.lock()
             r = st.compact(args.keep, keep_archive=not args.no_archive)

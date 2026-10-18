@@ -34,6 +34,7 @@ new access structures", 1997.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -197,6 +198,13 @@ def open_sealed(sealed: Dict[str, Any], reader: KeyPair, releases: List[str]) ->
 # --------------------------------------------------------------------------- #
 # custodians
 # --------------------------------------------------------------------------- #
+class VaultJournalCorrupt(VaultError):
+    """The release journal is damaged: counting receipts is no longer possible."""
+
+
+JOURNAL_GENESIS = "0" * 64
+
+
 @dataclass
 class Custodian:
     """Holds one share per sealed contract and releases it only against an on-chain receipt.
@@ -208,17 +216,64 @@ class Custodian:
     journal: Optional[str] = None
     released: Dict[Tuple[str, str], int] = field(default_factory=dict)
     log: List[Dict[str, Any]] = field(default_factory=list)
+    migrate_legacy: bool = False        # explicit, one-time migration of a pre-0.26 (unchained) journal
 
     def __post_init__(self) -> None:
-        if self.journal and os.path.exists(self.journal):
-            with open(self.journal) as f:
-                for line in f:
-                    try:
-                        e = json.loads(line)
-                    except ValueError:
-                        break                                   # torn last line: that release never left
-                    self.released[(e["contract_id"], e["reader"])] = e["receipt"]
-                    self.log.append(e)
+        # The chain is KEYED with a secret derived from the custodian's own key, so someone who can edit the
+        # file cannot recompute it; and once one chained line exists every later line must be chained, so a
+        # line cannot be made to look like an old unchained (v0.25.0) one (both found in the 0.26 review).
+        self._mac_key = hashlib.sha256(b"jurisledger/vault-journal/v1:" + bytes.fromhex(self.key.secret_hex())).digest()
+        self._head = JOURNAL_GENESIS
+        if not (self.journal and os.path.exists(self.journal)):
+            return
+        raw = open(self.journal, "rb").read()
+        lines = raw.split(b"\n")
+        torn = lines.pop()                                      # b"" when the file ends with a newline
+        good = len(raw) - len(torn)
+        chained = False
+        for n, line in enumerate(lines):
+            try:
+                e = json.loads(line)
+                key, receipt = (e["contract_id"], e["reader"]), int(e["receipt"])
+            except (ValueError, KeyError, TypeError):
+                raise VaultJournalCorrupt(
+                    f"{self.journal}: line {n + 1} is damaged. Refusing to release shares: the releases recorded "
+                    f"after it can no longer be counted, so receipts could be spent twice (audit H4). Restore the "
+                    f"journal from backup.") from None
+            if "prev" in e:
+                chained = True
+                if e["prev"] != self._head:
+                    raise VaultJournalCorrupt(f"{self.journal}: line {n + 1} does not follow line {n} "
+                                              f"(edited, reordered or deleted entries)")
+            elif chained:
+                raise VaultJournalCorrupt(f"{self.journal}: line {n + 1} is unchained after chained lines")
+            elif not self.migrate_legacy:
+                raise VaultJournalCorrupt(
+                    f"{self.journal}: line {n + 1} has no chain (a pre-0.26 journal, or one with its chain stripped). "
+                    f"If this custodian really ran 0.25 or older, migrate once with Custodian(..., migrate_legacy=True), "
+                    f"which chains the existing lines; otherwise restore the journal from backup.")
+            self._head = self._next_head(line)
+            self.released[key] = max(self.released.get(key, 0), receipt)
+            self.log.append(e)
+        if torn:                                                # a half-written last line: that release never left
+            with open(self.journal, "r+b") as f:
+                f.truncate(good)
+                os.fsync(f.fileno())
+        if self.migrate_legacy and not chained and self.log:    # explicit migration: rewrite every line chained
+            self._head, out = JOURNAL_GENESIS, []
+            for e in self.log:
+                line = json.dumps({**e, "prev": self._head}, sort_keys=True).encode()
+                out.append(line + b"\n")
+                self._head = self._next_head(line)
+            tmp = self.journal + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(b"".join(out))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.journal)
+
+    def _next_head(self, line: bytes) -> str:
+        return hmac.new(self._mac_key, bytes.fromhex(self._head) + line, hashlib.sha256).hexdigest()
 
     @property
     def address(self) -> str:
@@ -241,12 +296,15 @@ class Custodian:
         note = decrypt_note(self.key.secret_hex(), self.address, sealed["shares"][self.address])
         if note.get("contract_id") != cid or note.get("epoch", 0) != sealed.get("epoch", 0):
             raise VaultError("share was sealed for another contract or an earlier set of custodians")
-        entry = {"contract_id": cid, "reader": reader, "height": chain.height, "receipt": used + 1}
+        entry = {"contract_id": cid, "reader": reader, "height": chain.height, "receipt": used + 1,
+                 "prev": self._head}
+        line = json.dumps(entry, sort_keys=True).encode()
         if self.journal:                                        # durable before the share leaves
-            with open(self.journal, "a") as f:
-                f.write(json.dumps(entry) + "\n")
+            with open(self.journal, "ab") as f:
+                f.write(line + b"\n")
                 f.flush()
                 os.fsync(f.fileno())
+        self._head = self._next_head(line)
         self.released[(cid, reader)] = used + 1
         self.log.append(entry)
         return encrypt_note(reader, {**note, "custodian": self.address})

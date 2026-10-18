@@ -56,13 +56,16 @@ from .crypto import KeyPair, verify
 from .ledgernet import TwoPhaseBlockNode
 from .storage import BlockStore
 
+FUTURE_HEIGHTS = 64          # consensus messages for at most this many heights ahead are buffered
+FUTURE_PER_HEIGHT = 512      # ...and at most this many per height
 IDLE_BLOCK_SECONDS = 2.0     # with an empty mempool the proposer waits this long before proposing an empty block
 MAX_CONNECTIONS = 256        # simultaneous inbound connections per validator
 RATE_WINDOW_SECONDS = 10.0   # per-source connection rate limit: at most RATE_MAX new connections per window
 RATE_MAX = 60
 HELLO_PREFIX = b"jurisledger/peer-hello/v1:"
 TICK_SECONDS = 0.5           # one protocol tick; timeouts are 4 + 2 * round ticks
-MAX_FRAME = 32 * 1024 * 1024
+MAX_FRAME = 32 * 1024 * 1024        # authenticated peers (a batch of up to 50 blocks)
+MAX_CLIENT_FRAME = 1024 * 1024      # anyone else: a transaction or a query
 
 
 # --------------------------------------------------------------------------- #
@@ -73,15 +76,20 @@ def _send_frame(sock: socket.socket, obj: Dict[str, Any]) -> None:
     sock.sendall(struct.pack(">I", len(data)) + data)
 
 
-def _recv_frame(sock: socket.socket) -> Optional[Dict[str, Any]]:
+def _recv_frame(sock: socket.socket, limit: int = MAX_FRAME) -> Optional[Dict[str, Any]]:
     head = _recv_exact(sock, 4)
     if head is None:
         return None
     (n,) = struct.unpack(">I", head)
-    if n > MAX_FRAME:
+    if n > limit:
         return None
     body = _recv_exact(sock, n)
-    return None if body is None else json.loads(body)
+    if body is None:
+        return None
+    obj = json.loads(body)
+    if not isinstance(obj, dict):
+        raise ValueError("a frame must be a JSON object")
+    return obj
 
 
 def _recv_exact(sock: socket.socket, n: int) -> Optional[bytes]:
@@ -276,6 +284,10 @@ class Validator:
                              f"differs from {self.genesis['chain_id']}). Use an empty --store directory for a new "
                              f"ledger, or the matching genesis file to resume this one.")
         self.store.lock()                                      # one process per store, released if we die
+        self.store.anchor_key = self.key                       # snapshots we install or prune get an anchor
+        self.store.anchor_address = self.key.address           # ...signed by OUR key, which a disk edit cannot forge
+        from .signguard import SignGuard
+        self.guard = SignGuard.open(self.store.dir / "sign_state.json")   # what this key has already signed
         recovered = self.store.load()                          # resume from disk; re-audits every block
         self.inner.chain = recovered                           # (from a certified snapshot if the store was pruned)
         if recovered.height:
@@ -333,16 +345,24 @@ class Validator:
         height = self.chain.height + 1
         addresses = list(self.chain.state.validators)
         self.proto = TwoPhaseBlockNode(addresses.index(self.key.address), len(addresses))
+        self.proto.guard = self.guard
         self.proto.attach(self.inner, addresses, height)
+        lock_round, lock_value = self.guard.lock_for(height)   # resume locked on what we precommitted
+        if lock_value is not None:
+            self.proto.locked_round, self.proto.locked_value = lock_round, lock_value
+        self.first_round = self.guard.resume_round(height)     # never re-enter a round we already left
         self.proto.sim = self.transport
         self.transport.local, self.transport.height = self.proto, height
         self.transport.time = 0
         self.height_started = time.monotonic()
-        self.proposal_pending = self.proto.proposer(0) == self.proto.i     # we propose: maybe wait for work
+        self.proposal_pending = self.proto.proposer(self.first_round) == self.proto.i   # we propose: maybe wait for work
         if not self.proposal_pending:
-            self.proto.start_round(0)
+            self.proto.start_round(self.first_round)
         for m in self.future.pop(height, []):
-            self.proto.receive(m)
+            try:
+                self.proto.receive(m)
+            except Exception:  # noqa: BLE001 - a buffered message from a peer is untrusted input
+                self.rejected += 1
 
     def _commit(self, block: Block) -> None:
         self.inner.commit(block)
@@ -370,10 +390,15 @@ class Validator:
             return
         if t == "msg":
             h = obj.get("h", 0)
+            if type(h) is not int:
+                raise ValueError("height must be an integer")
             if h < self.chain.height + 1:
                 return                                          # stale height
             m = msg_from_wire(obj)
             if h > self.chain.height + 1:
+                if h > self.chain.height + FUTURE_HEIGHTS or len(self.future.get(h, ())) >= FUTURE_PER_HEIGHT:
+                    self.rejected += 1                          # bounded: cannot be used to fill memory
+                    return
                 self.future.setdefault(h, []).append(m)
                 if len(self.future[h]) == 1:                    # we are behind: ask for blocks
                     self.transport.send_raw(m.src, {"t": "get_blocks", "from": self.chain.height + 1,
@@ -385,10 +410,9 @@ class Validator:
                 except (KeyError, ValueError, TypeError):
                     self.rejected += 1
         elif t == "tx":
-            tx = T.Transaction.from_dict(obj["tx"])
-            if tx.txid not in self.inner.mempool and tx.signature_valid():
-                self.inner.receive_tx(tx)
-                self.transport.broadcast_raw(obj)               # gossip once
+            tx = T.Transaction.from_dict(obj.get("tx"))          # MalformedTransaction -> counted, not fatal
+            if self.inner.receive_tx(tx):
+                self.transport.broadcast_raw({"t": "tx", "tx": tx.to_dict()})   # gossip once, re-encoded
         elif t == "get_blocks" and int(obj.get("from", 1)) <= self.chain.base_height and self.chain.snapshot:
             self.snapshots_served += 1                          # those blocks were pruned here: send the state
             self.transport.send_raw(int(obj["reply_to"]), {"t": "snapshot", "snapshot": self.chain.snapshot,
@@ -430,23 +454,37 @@ class Validator:
         while not self.stop_event.is_set():
             try:
                 obj = self.inbox.get(timeout=0.02)
-                self._handle(obj)
             except queue.Empty:
-                pass
+                obj = None
+            if obj is not None:
+                try:
+                    self._handle(obj)
+                except Exception as err:  # noqa: BLE001 - a fault boundary: no input may stop the validator
+                    self.rejected += 1
+                    if self.rejected <= 5 or self.rejected % 1000 == 0:
+                        self.log(f"[v{self.index}] rejected a malformed {str(obj.get('t') if isinstance(obj, dict) else type(obj).__name__)[:20]!r} message "
+                                 f"({type(err).__name__}); {self.rejected} rejected so far")
             now = time.monotonic()
-            if self.proto is not None and getattr(self, "proposal_pending", False) and \
-                    (self.inner.mempool or now - self.height_started >= IDLE_BLOCK_SECONDS):
-                self.proposal_pending = False
-                self.proto.start_round(0)
-            if now - last_tick >= TICK_SECONDS and self.proto is not None:
-                last_tick = now
-                self.transport.time += 1
-                self.proto.tick()                               # idle validators still finalise (empty) blocks
-            if self.proto is not None and self.proto.decision is not None and self.proto.decided_block is not None:
-                self._commit(self.proto.decided_block)
-                self._start_height()
-                if until_height is not None and self.chain.height >= until_height:
-                    break
+            try:                                                # the same fault boundary around the protocol's own
+                if self.proto is not None and getattr(self, "proposal_pending", False) and \
+                        (self.inner.mempool or now - self.height_started >= IDLE_BLOCK_SECONDS):
+                    self.proposal_pending = False
+                    self.proto.start_round(self.first_round)
+                # Timeouts do not run while we, the proposer, are deliberately waiting for work: in v0.25.0 an idle
+                # proposer timed out its own round, signed nil votes, then proposed and voted for its block in that
+                # same round - an honest double-sign (found in the 0.26 review; the signing journal now refuses it).
+                if now - last_tick >= TICK_SECONDS and self.proto is not None and not getattr(self, "proposal_pending", False):
+                    last_tick = now
+                    self.transport.time += 1
+                    self.proto.tick()                           # idle validators still finalise (empty) blocks
+                if self.proto is not None and self.proto.decision is not None and self.proto.decided_block is not None:
+                    self._commit(self.proto.decided_block)
+                    self._start_height()
+                    if until_height is not None and self.chain.height >= until_height:
+                        break
+            except Exception as err:  # noqa: BLE001 - work on peer-supplied data (tick, buffered messages) may fail too
+                self.rejected += 1
+                self.log(f"[v{self.index}] protocol step failed ({type(err).__name__}: {str(err)[:80]}); continuing")
         self.transport.close()
 
     def _listen(self) -> None:
@@ -494,7 +532,7 @@ class Validator:
         with conn:
             while not self.stop_event.is_set():
                 try:
-                    obj = _recv_frame(conn)
+                    obj = _recv_frame(conn, MAX_FRAME if peer is not None else MAX_CLIENT_FRAME)
                 except (OSError, ValueError):
                     return
                 if obj is None:
@@ -537,11 +575,13 @@ class Validator:
 
 def serve(key: KeyPair, genesis: Dict[str, Any], peers: List[Tuple[str, int]], store_dir: str,
           listen: Tuple[str, int], until_height: Optional[int] = None, log: Any = print,
-          prune_every: int = 0, keep_archive: bool = True) -> Validator:
+          prune_every: int = 0, keep_archive: bool = True,
+          trusted_validators: Optional[List[str]] = None) -> Validator:
     if not (BlockStore(store_dir).genesis_path.exists()):
         store = BlockStore.create(store_dir, genesis)
     else:
         store = BlockStore(store_dir)
+    store.trusted_validators = trusted_validators
     v = Validator(key, genesis, peers, store, listen, log=log, prune_every=prune_every, keep_archive=keep_archive)
     v.run(until_height)
     return v

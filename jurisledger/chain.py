@@ -24,6 +24,15 @@ from .state import InvalidTx, State, quorum
 from .tx import Transaction
 
 
+class HistoryPruned(LookupError):
+    """The requested range starts inside history that this copy of the ledger no longer holds."""
+
+    def __init__(self, base: int, start: int):
+        super().__init__(f"blocks up to {base} were pruned from this copy of the ledger (asked from block {start}); "
+                         f"the answer would be incomplete. Use an archive node, or the store's archive/ directory.")
+        self.base, self.start = base, start
+
+
 class InvalidBlock(Exception):
     pass
 
@@ -152,9 +161,17 @@ class Chain:
             c.add_block(b)
         return c
 
-    def iter_txs(self, start: int = 1, end: Optional[int] = None) -> Iterator[Tuple[int, Transaction]]:
-        """(height, tx) for every finalised transaction in blocks start..end inclusive."""
+    def iter_txs(self, start: int = 1, end: Optional[int] = None,
+                 partial_ok: bool = False) -> Iterator[Tuple[int, Transaction]]:
+        """(height, tx) for every finalised transaction in blocks start..end inclusive.
+
+        On a pruned chain, asking for blocks at or before the snapshot raises HistoryPruned
+        (audit H8: v0.25.0 silently returned only the later blocks, so a payment made before
+        the snapshot looked missing and a paid obligation was reported OVERDUE).  Callers that
+        can live with "everything since the snapshot" say so with ``partial_ok=True``."""
         end = self.height if end is None else end
+        if start <= self.base_height and end > 0 and not partial_ok:
+            raise HistoryPruned(self.base_height, start)
         for b in self.blocks[max(0, start - self.base_height - 1):max(0, end - self.base_height)]:
             for t in b.txs:
                 yield b.header.height, t

@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-DInnFmA+imNck3BakGjhrRIPder+5WIkR+c+ZNvp1eo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>JurisLedger explorer — check a whole ledger in your browser</title>
@@ -132,58 +133,60 @@ select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8p
 </main>
 <footer><div class="wrap">JurisLedger is a research prototype under the MIT licence. Nothing here is legal advice.</div></footer>
 
+<script src="safe.js"></script>
 <script src="verify.js"></script>
 <script src="ledger3d.js"></script>
 <script>
 (async () => {
 const $ = s => document.querySelector(s), V = window.JurisVerify;
+const { html } = window.JurisSafe;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const money = c => (c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = c => Number.isFinite(c) ? (c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
 const COLORS = { hh: "#127C6E", firm: "#0F1F3D", gov: "#B4720C", wage: "#6B7FA8", legal: "#B8302F", other: "#9AA7B8" };
 let chain = null, pristine = null, acc = {}, results = [], selected = -1, follow = "", view3d = null;
 
 if (!V || !(await V.supported())) { $("#verdict").textContent = "This browser cannot check Ed25519 signatures"; $("#cap").innerHTML = "Use a current Chrome, Edge, Firefox or Safari, or run <code>jurisledger audit</code>."; $("#sample").disabled = true; return; }
 
-const name = a => (acc[a] && acc[a].name) || (a ? a.slice(0, 10) + "…" : "?");
+const name = a => String((acc[a] && acc[a].name) || (typeof a === "string" && a ? a.slice(0, 10) + "…" : "?"));
 function category(t) {
   if (t.kind === "PAYMENT") { const p = t.payload.purpose; return p === "FINAL_CONSUMPTION" ? "hh" : p === "WAGES" || p === "TAX" || p === "TRANSFER" ? "wage" : p === "GOVERNMENT_PURCHASE" ? "gov" : "firm"; }
   if (t.kind.startsWith("CONTRACT") || t.kind.startsWith("DISPUTE")) return "legal";
   return "other";
 }
 function sentence(t) {
-  const p = t.payload || {}, who = `<strong>${esc(name(t.sender))}</strong>`;
+  const p = t.payload || {}, who = html`<strong>${name(t.sender)}</strong>`, purpose = String(p.purpose || "").toLowerCase().replace(/_/g, " ");
   switch (t.kind) {
-    case "PAYMENT": return `${who} paid ${esc(name(p.to))} <strong>${money(p.amount)}</strong> <span class="kind">${esc(p.purpose.toLowerCase().replace(/_/g, " "))}${p.obligation ? " · " + esc(p.obligation) : ""}${p.contract ? " · under a contract" : ""}</span>`;
-    case "CONFIDENTIAL_PAYMENT": return `${who} paid ${esc(name(p.to))} a <strong>hidden amount</strong> <span class="kind">${esc(p.purpose.toLowerCase().replace(/_/g, " "))}</span>`;
-    case "CONTRACT_CREATE": return `${who} drafted <strong>${esc(p.title)}</strong> <span class="kind">${p.parties.length} parties · ${esc(p.visibility || "public")}</span>`;
-    case "CONTRACT_SIGN": return `${who} signed a contract`;
-    case "CONTRACT_ACCESS": return `${who} ${p.action === "VIEW" ? "opened" : "used"} a contract <span class="kind">${esc(p.context || "")}</span>`;
-    case "DISPUTE_OPEN": return `${who} opened a dispute`;
-    case "DISPUTE_FILE": return `${who} filed a document <span class="kind">${esc(p.note || "")}</span>`;
-    case "DISPUTE_AWARD": return `${who} issued an award: <strong>${esc((p.outcome || "").toLowerCase())}</strong>`;
-    case "ATTEST": return `${who} vouched for ${esc(name(p.subject))}`;
-    case "REGISTER": return `${who} registered as ${esc(p.role)}`;
-    case "VALIDATOR_VOTE": return `${who} voted: ${esc(p.action)}`;
-    case "EVIDENCE": return `${who} proved that ${esc(name(p.validator))} signed two blocks`;
-    default: return `${who} · ${esc(t.kind.toLowerCase().replace(/_/g, " "))}`;
+    case "PAYMENT": return html`${who} paid ${name(p.to)} <strong>${money(p.amount)}</strong> <span class="kind">${purpose}${p.obligation ? " · " + p.obligation : ""}${p.contract ? " · under a contract" : ""}</span>`;
+    case "CONFIDENTIAL_PAYMENT": return html`${who} paid ${name(p.to)} a <strong>hidden amount</strong> <span class="kind">${purpose}</span>`;
+    case "CONFIDENTIAL_CLAIM": return html`${who} ${p.accept ? "accepted" : "refused"} a hidden payment`;
+    case "CONTRACT_CREATE": return html`${who} drafted <strong>${p.title}</strong> <span class="kind">${Array.isArray(p.parties) ? p.parties.length : "?"} parties · ${p.visibility || "public"}</span>`;
+    case "CONTRACT_SIGN": return html`${who} signed a contract`;
+    case "CONTRACT_ACCESS": return html`${who} ${p.action === "VIEW" ? "opened" : "used"} a contract <span class="kind">${p.context || ""}</span>`;
+    case "DISPUTE_OPEN": return html`${who} opened a dispute`;
+    case "DISPUTE_FILE": return html`${who} filed a document <span class="kind">${p.note || ""}</span>`;
+    case "DISPUTE_AWARD": return html`${who} issued an award: <strong>${String(p.outcome || "").toLowerCase()}</strong>`;
+    case "ATTEST": return html`${who} vouched for ${name(p.subject)}`;
+    case "REGISTER": return html`${who} registered as ${p.role}`;
+    case "VALIDATOR_VOTE": return html`${who} voted: ${p.action}`;
+    case "EVIDENCE": return html`${who} proved that ${name(p.validator)} signed two blocks`;
+    default: return html`${who} · ${String(t.kind).toLowerCase().replace(/_/g, " ")}`;
   }
 }
 
 function ringSvg(f) {
-  const n = f.accounts.length, R = 56, cx = 110, cy = 96, bend = n === 2 ? 24 : 10;
+  const n = f.accounts.length, R = 56, cx = 110, cy = 96, bend = n === 2 ? 24 : 10, r1 = v => Math.round(v * 10) / 10;
   const pts = f.accounts.map((_, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n; return [cx + R * Math.cos(a), cy + R * Math.sin(a)]; });
-  let out = `<svg viewBox="0 0 220 190" aria-hidden="true"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--seal)"/></marker></defs>`;
+  const parts = [];
   pts.forEach((p, i) => {
     const q = pts[(i + 1) % n], dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
     const nx = uy, ny = -ux;                                  // bend each edge to its own side, so A→B and B→A never overlap
     const mx = (p[0] + q[0]) / 2 + nx * bend, my = (p[1] + q[1]) / 2 + ny * bend;
-    out += `<path d="M${p[0] + ux * 14} ${p[1] + uy * 14} Q${mx} ${my} ${q[0] - ux * 16} ${q[1] - uy * 16}" fill="none" stroke="var(--seal)" stroke-width="1.8" marker-end="url(#ah)"/>`;
+    parts.push(html`<path d="M${r1(p[0] + ux * 14)} ${r1(p[1] + uy * 14)} Q${r1(mx)} ${r1(my)} ${r1(q[0] - ux * 16)} ${r1(q[1] - uy * 16)}" fill="none" stroke="var(--seal)" stroke-width="1.8" marker-end="url(#ah)"/>`);
     const side = ny > 0.7 ? -(bend + 12) : 11;               // outside the curve, unless that is down among the names
-    out += `<text x="${mx + nx * side}" y="${my + ny * side + 3}" text-anchor="middle" font-size="9" fill="var(--seal)">${Math.round(f.amounts[i] / 100).toLocaleString()}</text>`;
+    parts.push(html`<text x="${r1(mx + nx * side)}" y="${r1(my + ny * side + 3)}" text-anchor="middle" font-size="9" fill="var(--seal)">${Math.round(f.amounts[i] / 100).toLocaleString()}</text>`);
   });
-  pts.forEach((p, i) => { out += `<circle cx="${p[0]}" cy="${p[1]}" r="12" fill="var(--sheet)" stroke="var(--ink)" stroke-width="1.4"/><text x="${p[0]}" y="${p[1] + (p[1] > cy ? 26 : -18)}" text-anchor="middle" font-size="9.5" fill="var(--ink)">${esc(name(f.accounts[i]).slice(0, 22))}</text>`; });
-  return out + "</svg>";
+  pts.forEach((p, i) => parts.push(html`<circle cx="${r1(p[0])}" cy="${r1(p[1])}" r="12" fill="var(--sheet)" stroke="var(--ink)" stroke-width="1.4"/><text x="${r1(p[0])}" y="${r1(p[1] + (p[1] > cy ? 26 : -18))}" text-anchor="middle" font-size="9.5" fill="var(--ink)">${name(f.accounts[i]).slice(0, 22)}</text>`));
+  return html`<svg viewBox="0 0 220 190" aria-hidden="true"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--seal)"/></marker></defs>${parts}</svg>`;
 }
 function flagBlocks(f) {
   const hit = new Set();
@@ -200,14 +203,14 @@ function renderFlags() {
   const flags = V.reviewFlags(chain), box = $("#flags");
   $("#flagsPanel").hidden = false;
   if (!flags.length) { box.innerHTML = '<p class="empty">No flags on this ledger.</p>'; return; }
-  box.innerHTML = flags.map((f, i) => {
-    let body = "";
-    if (f.detector === "circular_flow") body = `<h3>Money in a circle</h3>${ringSvg(f)}<p>${f.hops} firms, ${money(f.total)} in total, ${f.blocks[0] === f.blocks[1] ? "block " + f.blocks[0] : "blocks " + f.blocks[0] + "–" + f.blocks[1]}. Each payment within 10% of the first.</p>`;
-    else if (f.detector === "structuring") body = `<h3>Just under the threshold</h3><p><strong>${esc(name(f.account))}</strong> made ${f.count} payments between 9,000.00 and 10,000.00 in blocks ${f.blocks[0]}–${f.blocks[1]}, totalling ${money(f.total)}.</p>`;
-    else if (f.detector === "benford") body = `<h3>Invented-looking amounts</h3><p>The first digits of <strong>${esc(name(f.account))}</strong>'s ${f.payments} payments fit Benford's law badly (chi-square ${f.chi2}, critical ${f.critical}).</p>`;
-    else body = `<h3>One invoice, several lenders</h3><p><strong>${esc(name(f.borrower))}</strong> took financing against the same invoice from ${f.lenders.map(l => esc(name(l))).join(" and ")}.</p>`;
-    return `<button class="flag" data-f="${i}">${body}</button>`;
-  }).join("");
+  box.innerHTML = html`${flags.map((f, i) => {
+    let body;
+    if (f.detector === "circular_flow") body = html`<h3>Money in a circle</h3>${ringSvg(f)}<p>${f.hops} firms, ${money(f.total)} in total, ${f.blocks[0] === f.blocks[1] ? "block " + f.blocks[0] : "blocks " + f.blocks[0] + "–" + f.blocks[1]}. Each payment within 10% of the first.</p>`;
+    else if (f.detector === "structuring") body = html`<h3>Just under the threshold</h3><p><strong>${name(f.account)}</strong> made ${f.count} payments between 9,000.00 and 10,000.00 in blocks ${f.blocks[0]}–${f.blocks[1]}, totalling ${money(f.total)}.</p>`;
+    else if (f.detector === "benford") body = html`<h3>Invented-looking amounts</h3><p>The first digits of <strong>${name(f.account)}</strong>'s ${f.payments} payments fit Benford's law badly (chi-square ${f.chi2}, critical ${f.critical}).</p>`;
+    else body = html`<h3>One invoice, several lenders</h3><p><strong>${name(f.borrower)}</strong> took financing against the same invoice from ${f.lenders.map(l => name(l)).join(" and ")}.</p>`;
+    return html`<button class="flag" data-f="${i}">${body}</button>`;
+  })}`;
   box.querySelectorAll(".flag").forEach(btn => btn.onclick = () => {
     const on = !btn.classList.contains("on");
     box.querySelectorAll(".flag").forEach(b => b.classList.remove("on"));
@@ -232,9 +235,9 @@ async function open(exported, label) {
   $("#cap").textContent = `Opened ${label}. Each block appears as it is verified.`;
   $("#legend").hidden = false;
   let tx = 0;
-  const sel = $("#acct"); sel.innerHTML = '<option value="">Choose an account…</option>' + Object.entries(acc)
-    .filter(([, v]) => !["validator", "issuer"].includes(v.role)).sort((a, b) => a[1].name.localeCompare(b[1].name))
-    .map(([a, v]) => `<option value="${a}">${esc(v.name)} (${esc(v.role)})</option>`).join("");
+  const sel = $("#acct"); sel.innerHTML = html`<option value="">Choose an account…</option>${Object.entries(acc)
+    .filter(([, v]) => !["validator", "issuer"].includes(v.role)).sort((a, b) => String(a[1].name).localeCompare(String(b[1].name)))
+    .map(([a, v]) => html`<option value="${a}">${v.name} (${v.role})</option>`)}`;
   const report = await V.auditChain(chain, async r => {
     results.push(r); tx += r.block.txs.length;
     $("#nBlocks").textContent = r.index + 1; $("#nTx").textContent = tx.toLocaleString();
@@ -245,11 +248,11 @@ async function open(exported, label) {
   const v = $("#verdict");
   if (report.valid) {
     v.textContent = "Verified"; v.className = "verdict good";
-    $("#cap").innerHTML = `Every block links to the one before it, every transaction is signed by its author and sits under its block's Merkle root, and every block carries signatures from more than two thirds of the ${chain.genesis.validators.length} validators.` + (report.base_height ? ` The ledger starts from a certified snapshot at block ${report.base_height}.` : "");
+    $("#cap").innerHTML = html`Every block links to the one before it, every transaction is signed by its author and sits under its block's Merkle root, and every block carries signatures from more than two thirds of the ${chain.genesis.validators.length} validators.${report.base_height ? ` The ledger starts from a certified snapshot at block ${report.base_height}.` : ""} <em>This proves the file is internally consistent; it is THE ledger only if its validator keys are the ones you trust.</em>`;
   } else {
     v.textContent = "Rejected"; v.className = "verdict bad";
     $("#cap").textContent = "This ledger has been altered or was never finalised. What failed:";
-    $("#problems").innerHTML = report.problems.slice(0, 12).map(p => `<li>${esc(p)}</li>`).join("") + (report.problems.length > 12 ? `<li>…and ${report.problems.length - 12} more</li>` : "");
+    $("#problems").innerHTML = html`${report.problems.slice(0, 12).map(p => html`<li>${p}</li>`)}${report.problems.length > 12 ? html`<li>…and ${report.problems.length - 12} more</li>` : ""}`;
   }
   $("#split").hidden = false;
   if (window.Ledger3D) {
@@ -266,8 +269,8 @@ function addCard(r) {
   card.className = "card" + (r.ok ? "" : " bad"); card.setAttribute("role", "option"); card.dataset.i = r.index;
   const mix = {}; b.txs.forEach(t => { const c = category(t); mix[c] = (mix[c] || 0) + 1; });
   const when = h.timestamp ? new Date(h.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
-  card.innerHTML = `<span class="ring stamp"></span><div class="h">${h.height}</div><div class="m">${b.txs.length} tx · ${r.votes} sig${when ? " · " + when : ""}</div>
-    <div class="mix">${Object.entries(mix).map(([c, n]) => `<i style="width:${n / b.txs.length * 100}%;background:${COLORS[c]}"></i>`).join("")}</div>`;
+  card.innerHTML = html`<span class="ring stamp"></span><div class="h">${h.height}</div><div class="m">${b.txs.length} tx · ${r.votes} sig${when ? " · " + when : ""}</div>
+    <div class="mix">${Object.entries(mix).map(([c, n]) => html`<i style="width:${(n / b.txs.length * 100).toFixed(2)}%;background:${COLORS[c]}"></i>`)}</div>`;
   card.onclick = () => select(r.index);
   card.onkeydown = e => { if (e.key === "ArrowRight") select(Math.min(results.length - 1, r.index + 1), true); if (e.key === "ArrowLeft") select(Math.max(0, r.index - 1), true); };
   $("#strip").appendChild(card); requestAnimationFrame(() => card.classList.add("in"));
@@ -283,30 +286,30 @@ function select(i, focus) {
   if (focus) document.querySelector(`.card[data-i="${i}"]`).focus();
   $("#bTitle").textContent = `Block ${h.height}`;
   const kv = [
-    ["Status", r.ok ? '<span class="good">verified</span>' : `<span class="bad">${esc(r.issues.join("; "))}</span>`],
-    ["Proposed by", esc(name(h.proposer))],
+    ["Status", r.ok ? html`<span class="good">verified</span>` : html`<span class="bad">${r.issues.join("; ")}</span>`],
+    ["Proposed by", name(h.proposer)],
     ["Rounds", `proposed in round ${h.round}, finalised in round ${b.commit_round ?? h.round}`],
     ["Signatures", `${r.votes} of ${chain.genesis.validators.length} validators (${V.quorum(chain.genesis.validators.length)} needed)`],
     ["Time", h.timestamp ? new Date(h.timestamp).toLocaleString() : "—"],
-    ["Fingerprint", `<code>${r.hash}</code>`], ["Links to", `<code>${h.prev_hash}</code>`], ["Merkle root", `<code>${h.tx_root}</code>`],
+    ["Fingerprint", html`<code>${r.hash}</code>`], ["Links to", html`<code>${h.prev_hash}</code>`], ["Merkle root", html`<code>${h.tx_root}</code>`],
   ];
-  $("#bKv").innerHTML = kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  $("#bKv").innerHTML = html`${kv.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}`;
   renderTxs(); renderGdp();
 }
 function involves(t, a) { const p = t.payload || {}; return t.sender === a || p.to === a || p.subject === a || (p.parties || []).includes(a); }
 function renderTxs() {
   const r = results[selected]; if (!r) return;
   const q = $("#txFilter").value.trim().toLowerCase();
-  const rows = r.block.txs.map(t => ({ t, html: sentence(t) })).filter(x => !q || x.html.toLowerCase().replace(/<[^>]+>/g, "").includes(q));
-  $("#txs").innerHTML = rows.length ? rows.map(x => `<li class="${follow && involves(x.t, follow) ? "hit" : ""}"><span class="good">✓</span><span>${x.html}</span></li>`).join("")
-    : `<li class="empty">No transactions in block ${r.block.header.height} match “${esc(q)}”.</li>`;
+  const plain = h => new DOMParser().parseFromString(String(h), "text/html").body.textContent.toLowerCase();   // parsing only: nothing runs
+  const rows = r.block.txs.map(t => ({ t, h: sentence(t) })).filter(x => !q || plain(x.h).includes(q));
+  $("#txs").innerHTML = html`${rows.length ? rows.map(x => html`<li class="${follow && involves(x.t, follow) ? "hit" : ""}"><span class="good">✓</span><span>${x.h}</span></li>`)
+    : html`<li class="empty">No transactions in block ${r.block.header.height} match “${q}”.</li>`}`;
 }
 function renderGdp() {
   const upTo = { genesis: chain.genesis, blocks: chain.blocks.slice(0, selected + 1) };
   const g = V.expenditure(upTo, acc), max = Math.max(g.C, g.I, g.G, g.X, g.M, 1);
-  const row = (label, v, cls = "") => `<div class="gdprow"><span>${label}</span><div class="bar"><i class="${cls}" style="width:${v / max * 100}%"></i></div><span class="n">${money(v)}</span></div>`;
-  $("#gdp").innerHTML = row("Consumption (C)", g.C) + row("Investment (I)", g.I) + row("Government (G)", g.G) + row("Exports (X)", g.X) + row("Imports (M)", g.M, "miss")
-    + `<div class="gdprow" style="border-top:1px solid var(--rule);padding-top:.5rem"><strong>GDP</strong><span></span><strong class="n">${money(g.gdp)}</strong></div><p style="font-size:.85rem;color:var(--ink-2);margin:.2rem 0 0">C + I + G + X − M, from ${g.payments} payments through block ${results[selected].block.header.height}.</p>`;
+  const row = (label, v, cls = "") => html`<div class="gdprow"><span>${label}</span><div class="bar"><i class="${cls}" style="width:${(v / max * 100).toFixed(2)}%"></i></div><span class="n">${money(v)}</span></div>`;
+  $("#gdp").innerHTML = html`${row("Consumption (C)", g.C)}${row("Investment (I)", g.I)}${row("Government (G)", g.G)}${row("Exports (X)", g.X)}${row("Imports (M)", g.M, "miss")}<div class="gdprow" style="border-top:1px solid var(--rule);padding-top:.5rem"><strong>GDP</strong><span></span><strong class="n">${money(g.gdp)}</strong></div><p style="font-size:.85rem;color:var(--ink-2);margin:.2rem 0 0">C + I + G + X − M, from ${g.payments} payments through block ${results[selected].block.header.height}.</p>`;
 }
 $("#txFilter").oninput = renderTxs;
 document.querySelectorAll("#view3d .tabs button").forEach(b => b.onclick = () => {
@@ -320,12 +323,12 @@ $("#acct").onchange = e => {
   follow = e.target.value; const hits = [];
   results.forEach(r => { const on = !!follow && r.block.txs.some(t => involves(t, follow)); document.querySelector(`.card[data-i="${r.index}"]`).classList.toggle("hit", on); if (on) hits.push(r.block.header.height); });
   let paid = 0, received = 0; if (follow) chain.blocks.forEach(b => b.txs.forEach(t => { if (t.kind === "PAYMENT") { if (t.sender === follow) paid += t.payload.amount; if (t.payload.to === follow) received += t.payload.amount; } }));
-  $("#acctCap").innerHTML = follow ? `<strong>${esc(name(follow))}</strong> appears in ${hits.length} of ${results.length} blocks (highlighted). Paid ${money(paid)}, received ${money(received)} in public payments.` : "";
+  $("#acctCap").innerHTML = html`${follow ? html`<strong>${name(follow)}</strong> appears in ${hits.length} of ${results.length} blocks (highlighted). Paid ${money(paid)}, received ${money(received)} in public payments.` : ""}`;
   renderTxs();
 };
 
 // loading
-async function readFile(f) { try { await open(JSON.parse(await f.text()), f.name); } catch (e) { $("#verdict").textContent = "Not a ledger export"; $("#verdict").className = "verdict bad"; $("#cap").textContent = "The file is not JSON written by jurisledger demo, export or snapshot."; } }
+async function readFile(f) { try { await open(V.parseJSON(await f.text()), f.name); } catch (e) { $("#verdict").textContent = "Not a ledger export"; $("#verdict").className = "verdict bad"; $("#cap").textContent = "The file is not JSON written by jurisledger demo, export or snapshot."; } }
 const drop = $("#drop"), file = $("#file");
 drop.onclick = () => file.click(); drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); file.click(); } };
 file.onchange = () => file.files[0] && readFile(file.files[0]);

@@ -59,9 +59,20 @@ class Node:
         return self.key.address
 
     # -- mempool -------------------------------------------------------- #
-    def receive_tx(self, tx: T.Transaction) -> None:
-        if tx.signature_valid() and tx.chain_id == self.chain.chain_id:
-            self.mempool.setdefault(tx.txid, tx)
+    MAX_MEMPOOL = 20_000                 # bounded: a flood of valid-looking transactions cannot exhaust memory
+
+    def receive_tx(self, tx: T.Transaction) -> bool:
+        if tx.txid in self.mempool or len(self.mempool) >= self.MAX_MEMPOOL:
+            return False
+        if tx.chain_id != self.chain.chain_id or not tx.signature_valid():
+            return False
+        acct = self.chain.state.accounts.get(tx.sender)
+        if acct is None and tx.kind != T.REGISTER:
+            return False                       # an unknown sender can only register (0.26 review: mempool flooding)
+        if acct is not None and tx.nonce < acct.get("nonce", 0):
+            return False                       # already used: can never be included
+        self.mempool[tx.txid] = tx
+        return True
 
     # -- proposing ------------------------------------------------------ #
     def build_block(self, height: int, round_: int, skip_sender: Optional[str] = None,
