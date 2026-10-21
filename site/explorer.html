@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-DInnFmA+imNck3BakGjhrRIPder+5WIkR+c+ZNvp1eo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-ORoko0PU3PxTlgVvqlXnlVpH/o4o8YPH/wZdKm4DMCk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>JurisLedger explorer — check a whole ledger in your browser</title>
@@ -9,12 +9,12 @@
 <link rel="stylesheet" href="style.css">
 <style>
 .strip{display:flex;gap:.7rem;overflow-x:auto;padding:1rem .2rem 1.2rem;scroll-snap-type:x proximity;min-height:9.5rem}
-.card{flex:0 0 7.4rem;scroll-snap-align:start;background:var(--sheet);border:1px solid var(--rule);border-radius:10px;padding:.6rem .7rem;cursor:pointer;
-  position:relative;text-align:left;font:inherit;color:inherit;opacity:0;transform:translateX(-10px);transition:opacity .3s,transform .3s,border-color .2s,box-shadow .2s}
+.card{flex:0 0 7.4rem;scroll-snap-align:start;background:var(--sheet);border:0;box-shadow:0 1px 0 var(--rule);border-radius:var(--radius);padding:.6rem .7rem;cursor:pointer;
+  position:relative;text-align:left;font:inherit;color:inherit;opacity:0;transform:translateX(-10px);transition:opacity var(--t-state) var(--ease-out),transform var(--t-state) var(--ease-out),border-color var(--t-ui) ease,box-shadow var(--t-ui) ease}
 .card.in{opacity:1;transform:none}
 .card:focus-visible,.card.sel{outline:none;border-color:var(--ink);box-shadow:0 0 0 2px var(--ink)}
 .card.hit{box-shadow:0 0 0 3px var(--amber)}
-.card.bad{border-color:var(--seal)}
+.card.bad{box-shadow:0 0 0 1.5px var(--seal)}
 .card .h{font-family:var(--serif);font-size:1.35rem;line-height:1}
 .card .m{font-size:.78rem;color:var(--ink-2);margin-top:.25rem}
 .card .ring{position:absolute;top:.5rem;right:.5rem;width:1.1rem;height:1.1rem;border-radius:50%;border:2px solid var(--verified)}
@@ -32,9 +32,10 @@
 @media (max-width:860px){.stage.even{grid-template-columns:1fr}}
 .split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:1.2rem;margin-top:1.2rem}
 @media (max-width:860px){.split{grid-template-columns:1fr}}
-.panel{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:1.1rem}
+.panel{background:var(--sheet);border:0;box-shadow:0 1px 0 var(--rule);border-radius:var(--radius);padding:1.1rem}
 .kv{display:grid;grid-template-columns:10rem 1fr;gap:.3rem .8rem;font-size:.93rem}
-.kv dt{color:var(--ink-2)} .kv dd{margin:0;word-break:break-all}
+.kv dt{color:var(--ink-2)} .kv dd{margin:0;overflow-wrap:anywhere}
+@media (max-width:560px){.kv{grid-template-columns:7.5rem 1fr}}
 .txs{list-style:none;margin:.6rem 0 0;padding:0;max-height:26rem;overflow:auto;border-top:1px solid var(--rule)}
 .txs li{padding:.45rem 0;border-bottom:1px solid var(--rule);font-size:.93rem;display:grid;grid-template-columns:1.3rem 1fr;gap:.4rem}
 .txs li.hit{background:color-mix(in srgb,var(--amber) 12%,transparent)}
@@ -44,17 +45,18 @@
 .gdprow{display:grid;grid-template-columns:9rem 1fr 7.5rem;gap:.6rem;align-items:center;font-size:.9rem;margin:.35rem 0}
 .gdprow .bar{margin:0}
 .gdprow .n{text-align:right;font-variant-numeric:tabular-nums}
-select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--ink);width:100%}
+select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:var(--radius);background:var(--paper);color:var(--ink);width:100%}
 .flags{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:.8rem;margin-top:.6rem}
-.flag{background:var(--sheet);border:1px solid var(--rule);border-left:4px solid var(--seal);border-radius:10px;padding:.8rem;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.flag{background:var(--sheet);border:1px solid color-mix(in srgb,var(--seal) 45%,var(--rule));border-radius:var(--radius);transition:box-shadow var(--t-ui) ease,transform var(--t-press) var(--ease-out);padding:.8rem;cursor:pointer;text-align:left;font:inherit;color:inherit}
 .flag:focus-visible,.flag.on{outline:none;box-shadow:0 0 0 2px var(--seal)}
 .flag h3{margin:0 0 .3rem;font-size:1.05rem}
 .flag svg{width:100%;height:auto;display:block;margin:.3rem 0}
 .flag p{font-size:.88rem;margin:.2rem 0;color:var(--ink-2)}
 .tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem}
-.tabs button{font:inherit;font-size:.9rem;padding:.4rem .9rem;border-radius:999px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);cursor:pointer}
+.tabs button{font:inherit;font-size:.9rem;padding:.4rem .9rem;border-radius:var(--radius);border:1px solid var(--rule);background:var(--paper);color:var(--ink);cursor:pointer;transition:background-color var(--t-ui) ease,color var(--t-ui) ease,transform var(--t-press) var(--ease-out)}
+.tabs button:active,.flag:active{transform:scale(.98)}
 .tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
-#c3d{width:100%;height:480px;display:block;border-radius:10px;background:radial-gradient(ellipse at 50% 40%,var(--sheet),var(--paper));touch-action:none}
+#c3d{width:100%;height:480px;display:block;border-radius:var(--radius);background:var(--wash);touch-action:none}
 .note{font-size:.88rem;color:var(--ink-2);margin-top:1rem}
 .empty{color:var(--ink-2);padding:2rem 0}
 </style>
@@ -62,23 +64,23 @@ select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8p
 <body>
 <header class="top"><div class="wrap">
   <a class="brand" href="index.html">JurisLedger</a>
-  <nav class="folios" aria-label="Site"><a href="index.html">How it works</a><a href="explorer.html" aria-current="page"><strong>Explore a ledger</strong></a><a href="wallet.html">Wallet</a><a href="dashboard.html">Dashboard</a><a href="index.html#evidence">Verify one contract</a><a href="https://github.com/Normansrule/juris-ledger">Code</a></nav>
+  <nav class="folios" aria-label="Site"><a href="index.html">How it works</a><a href="explorer.html" aria-current="page">Explore a ledger</a><a href="dashboard.html">Dashboard</a><a href="wallet.html">Wallet</a><a href="https://github.com/Normansrule/juris-ledger">Code</a></nav>
 </div></header>
 
 <main class="wrap" style="padding-top:2.5rem">
-  <h1 style="font-size:clamp(2rem,5vw,3.4rem)">Check a whole ledger, block by block.</h1>
+  <h1 class="page-title">Check a whole ledger, block by block.</h1>
   <p class="lead" style="font-size:1.15rem;color:var(--ink-2);max-width:68ch">Open a ledger export and this page re-checks it here, in your browser: every link between blocks, every Merkle root, every transaction signature and every validator certificate. Nothing is uploaded. Then browse what the ledger records.</p>
 
   <div class="stage even" style="margin-top:1.5rem">
     <div>
-      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a ledger export">
+      <div class="drop" id="drop" tabindex="0" role="button">
         <strong>Drop a chain.json here</strong><br>or click to choose one — written by <code>jurisledger demo</code>, <code>jurisledger export</code> or <code>jurisledger snapshot</code>
         <input type="file" id="file" accept=".json,application/json" hidden>
       </div>
       <div class="controls"><button class="btn" id="sample">Open the demo republic</button><button class="btn ghost" id="tamperBtn" disabled>Alter one old payment</button></div>
     </div>
     <div>
-      <div class="verdict" id="verdict">No ledger open</div>
+      <div class="verdict" id="verdict" role="status" aria-live="polite">No ledger open</div>
       <div class="status-line"><span><b id="nBlocks">0</b> blocks</span><span><b id="nTx">0</b> transactions</span><span><b id="nVals">0</b> validators</span></div>
       <div class="progress" aria-hidden="true"><i id="prog"></i></div>
       <p class="caption" id="cap" style="min-height:0">The demo republic is twelve blocks and 677 transactions: three periods of an economy, a lease that went to arbitration, a supply contract, and a fraud ring for the detectors to find.</p>
@@ -87,8 +89,8 @@ select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:8p
   </div>
 
   <div class="legend" id="legend" hidden>
-    <span style="--c:#127C6E">household spending</span><span style="--c:#0F1F3D">between firms</span><span style="--c:#B4720C">government</span>
-    <span style="--c:#6B7FA8">wages and taxes</span><span style="--c:#B8302F">contracts and disputes</span><span style="--c:#9AA7B8">other</span>
+    <span style="--c:var(--cat-hh)">household spending</span><span style="--c:var(--cat-firm)">between firms</span><span style="--c:var(--cat-gov)">government</span>
+    <span style="--c:var(--cat-wage)">wages and taxes</span><span style="--c:var(--cat-legal)">contracts and disputes</span><span style="--c:var(--cat-other)">other</span>
   </div>
   <div class="strip" id="strip" role="listbox" aria-label="Blocks"></div>
 
@@ -142,7 +144,7 @@ const $ = s => document.querySelector(s), V = window.JurisVerify;
 const { html } = window.JurisSafe;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const money = c => Number.isFinite(c) ? (c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
-const COLORS = { hh: "#127C6E", firm: "#0F1F3D", gov: "#B4720C", wage: "#6B7FA8", legal: "#B8302F", other: "#9AA7B8" };
+const COLORS = (() => { const v = n => getComputedStyle(document.documentElement).getPropertyValue("--cat-" + n).trim(); return { hh: v("hh"), firm: v("firm"), gov: v("gov"), wage: v("wage"), legal: v("legal"), other: v("other") }; })();
 let chain = null, pristine = null, acc = {}, results = [], selected = -1, follow = "", view3d = null;
 
 if (!V || !(await V.supported())) { $("#verdict").textContent = "This browser cannot check Ed25519 signatures"; $("#cap").innerHTML = "Use a current Chrome, Edge, Firefox or Safari, or run <code>jurisledger audit</code>."; $("#sample").disabled = true; return; }

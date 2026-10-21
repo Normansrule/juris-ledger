@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-oHSvNVTz26eur/UlXLwAP8j9MO0dqT0upqipK39mG/o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-05Et7rqggujc9u1cfCsMW4GWNQ6F6+uuMcugGJBMIAI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>JurisLedger dashboard — the economy and the network, block by block</title>
@@ -9,23 +9,24 @@
 <link rel="stylesheet" href="style.css">
 <style>
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));gap:.8rem;margin:1.2rem 0}
-.kpi{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:.9rem 1rem}
+.kpi{background:var(--sheet);border:0;box-shadow:0 1px 0 var(--rule);border-radius:var(--radius);padding:.9rem 1rem}
 .kpi b{display:block;font-family:var(--serif);font-size:1.8rem;font-weight:500;line-height:1.1;font-variant-numeric:tabular-nums}
 .kpi span{font-size:.85rem;color:var(--ink-2)}
 .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,34rem),1fr));gap:1rem}
-.chart{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:1rem;position:relative}
+.chart{background:var(--sheet);border:0;box-shadow:0 1px 0 var(--rule);border-radius:var(--radius);padding:1rem;position:relative}
 .chart h2{font-size:1.15rem;margin:0 0 .2rem}
 .chart p{font-size:.85rem;color:var(--ink-2);margin:0 0 .5rem}
 .chart canvas{width:100%;height:230px;display:block}
-.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.8rem;padding:.35rem .55rem;border-radius:6px;white-space:nowrap;display:none;z-index:2}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.8rem;padding:.35rem .55rem;border-radius:var(--radius);white-space:nowrap;display:none;z-index:2}
 .legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.8rem;color:var(--ink-2);margin:.2rem 0 .4rem}
 .legend span::before{content:"";display:inline-block;width:.7rem;height:.7rem;border-radius:2px;margin-right:.3rem;vertical-align:-.05rem;background:var(--c)}
 .src{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
-.src input{font:inherit;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--ink);width:17rem}
+.src input{font:inherit;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:var(--radius);background:var(--paper);color:var(--ink);width:17rem}
 .live{display:inline-flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--ink-2)}
 .live i{width:.55rem;height:.55rem;border-radius:50%;background:var(--rule)}
 .live.on i{background:var(--verified);animation:pulse 1.4s infinite}
 @keyframes pulse{50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.live.on i{animation:none}}
 .sut-wrap{overflow-x:auto}
 table.sut{border-collapse:separate;border-spacing:3px;font-size:.84rem;font-variant-numeric:tabular-nums;min-width:46rem;width:100%}
 table.sut th{font-weight:600;color:var(--ink-2);text-align:right;padding:.25rem .4rem;white-space:nowrap}
@@ -36,7 +37,7 @@ table.sut .ok{color:var(--verified);font-weight:600}
 .whatif{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:1.2rem;align-items:start}
 @media (max-width:760px){.whatif{grid-template-columns:1fr}}
 .whatif label{display:block;font-size:.9rem;color:var(--ink-2);margin:.5rem 0 .2rem}
-.whatif select{width:100%;font:inherit;padding:.45rem .5rem;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--ink)}
+.whatif select{width:100%;font:inherit;padding:.45rem .5rem;border:1px solid var(--rule);border-radius:var(--radius);background:var(--paper);color:var(--ink)}
 .whatif input[type=range]{width:100%;accent-color:var(--verified)}
 .hbar{display:grid;grid-template-columns:8.5rem 1fr 7rem;gap:.6rem;align-items:center;margin:.45rem 0;font-size:.9rem}
 .hbar .track{height:1.1rem;background:var(--wash);border-radius:4px;overflow:hidden}
@@ -52,11 +53,11 @@ table.top td.n,table.top th.n{text-align:right}
 <body>
 <header class="top"><div class="wrap">
   <a class="brand" href="index.html">JurisLedger</a>
-  <nav class="folios" aria-label="Site"><a href="index.html">How it works</a><a href="explorer.html">Explore a ledger</a><a href="wallet.html">Wallet</a><a href="dashboard.html" aria-current="page"><strong>Dashboard</strong></a><a href="https://github.com/Normansrule/juris-ledger">Code</a></nav>
+  <nav class="folios" aria-label="Site"><a href="index.html">How it works</a><a href="explorer.html">Explore a ledger</a><a href="dashboard.html" aria-current="page">Dashboard</a><a href="wallet.html">Wallet</a><a href="https://github.com/Normansrule/juris-ledger">Code</a></nav>
 </div></header>
 
 <main class="wrap" style="padding-top:2.5rem;padding-bottom:4rem">
-  <h1 style="font-size:clamp(2rem,5vw,3.2rem)">The economy and the network, block by block.</h1>
+  <h1 class="page-title">The economy and the network, block by block.</h1>
   <p style="font-size:1.1rem;color:var(--ink-2);max-width:70ch">What a statistics office or a network operator watches: how much is happening, where the money goes, how gross domestic product (GDP) builds up, and whether the validators are keeping up. Fed by <code>jurisledger api</code>, by a <code>metrics.csv</code>, or by the bundled sample.</p>
 
   <div class="stage" style="grid-template-columns:1fr;margin-top:1.2rem">
@@ -76,7 +77,7 @@ table.top td.n,table.top th.n{text-align:right}
   <div class="charts">
     <section class="chart"><h2>Activity</h2><p>Transactions per block (bars) and public payments (line).</p><canvas id="cTx" role="img" aria-label="chart"></canvas></section>
     <section class="chart"><h2>Where the money went</h2><p>Spending per block by kind; imports drawn below the line because they subtract from GDP.</p>
-      <div class="legend"><span style="--c:#127C6E">households (C)</span><span style="--c:#0F1F3D">investment (I)</span><span style="--c:#B4720C">government (G)</span><span style="--c:#6B7FA8">exports (X)</span><span style="--c:#B8302F">imports (M)</span></div>
+      <div class="legend"><span style="--c:var(--cat-hh)">households (C)</span><span style="--c:var(--cat-firm)">investment (I)</span><span style="--c:var(--cat-gov)">government (G)</span><span style="--c:var(--cat-wage)">exports (X)</span><span style="--c:var(--cat-legal)">imports (M)</span></div>
       <canvas id="cMix" role="img" aria-label="chart"></canvas></section>
     <section class="chart"><h2>GDP, accumulating</h2><p>C + I + G + X − M summed from block 1, exactly as <code>jurisledger query gdp</code> computes it.</p><canvas id="cGdp" role="img" aria-label="chart"></canvas></section>
     <section class="chart"><h2>Consensus health</h2><p>Validator signatures on each block (bars) and extra voting rounds needed (dots). Rounds above zero mean a proposer was slow or the network was delayed.</p><canvas id="cHealth" role="img" aria-label="chart"></canvas></section>
@@ -116,7 +117,7 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const cssv = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const money = c => Number.isFinite(c) ? (c / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—";
 const compact = c => { const v = c / 100, a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M" : a >= 1e3 ? (v / 1e3).toFixed(0) + "k" : v.toFixed(0); };
-const MIX = [["c", "#127C6E", "households"], ["i", "#0F1F3D", "investment"], ["g", "#B4720C", "government"], ["x", "#6B7FA8", "exports"]];
+const MIX = [["c", "--cat-hh", "households"], ["i", "--cat-firm", "investment"], ["g", "--cat-gov", "government"], ["x", "--cat-wage", "exports"]].map(([k, v, n]) => [k, getComputedStyle(document.documentElement).getPropertyValue(v).trim(), n]);
 let rows = [], timer = null, charts = [];
 
 function kpis(status, rows) {
@@ -180,7 +181,7 @@ function build() {
     const y = axis(o, max, v => compact(v), min);
     rows.forEach((r, i) => { let base = 0;
       MIX.forEach(([k, col]) => { const v = r[k] * o.progress, y0 = y(base), y1 = y(base + v); o.ctx.fillStyle = col; o.ctx.globalAlpha = i === o.hover ? 1 : .82; o.ctx.fillRect(o.x(i) - o.bw / 2, y1, o.bw, y0 - y1); base += v; });
-      o.ctx.fillStyle = "#B8302F"; const y0 = y(0), y1 = y(-r.m * o.progress); o.ctx.fillRect(o.x(i) - o.bw / 2, y0, o.bw, y1 - y0); });
+      o.ctx.fillStyle = cssv("--cat-legal"); const y0 = y(0), y1 = y(-r.m * o.progress); o.ctx.fillRect(o.x(i) - o.bw / 2, y0, o.bw, y1 - y0); });
     o.ctx.globalAlpha = 1; o.ctx.strokeStyle = o.ink; o.ctx.beginPath(); o.ctx.moveTo(o.pad.l, y(0)); o.ctx.lineTo(o.W - o.pad.r, y(0)); o.ctx.stroke();
   }, r => `block ${r.height}: C ${money(r.c)} · I ${money(r.i)} · G ${money(r.g)} · X ${money(r.x)} · M −${money(r.m)}`));
   charts.push(chart($("#cGdp"), o => {
@@ -221,7 +222,7 @@ function renderSut(t) {
   $("#sutPanel").hidden = $("#whatifPanel").hidden = false;
   const cols = [...t.industries, ...t.final_columns], cells = t.products.map((p, r) => [...t.use[r], ...t.final[r]]);
   const max = Math.max(1, ...cells.flat()), money0 = c => c ? compact(c) : "·";
-  const shade = v => { const a = v ? 6 + 49 * Math.sqrt(v / max) : 0; return { bg: `color-mix(in srgb, var(--verified) ${a.toFixed(0)}%, var(--sheet))` }; };   // capped so text stays readable in both themes
+  const shade = v => { const a = v ? 6 + 39 * Math.sqrt(v / max) : 0; return { bg: `color-mix(in srgb, var(--verified) ${a.toFixed(0)}%, var(--sheet))` }; };   // capped so text stays readable in both themes
   const blanks = Array.from({ length: t.final_columns.length + 1 }, () => html`<td></td>`);
   const head = html`<tr><th></th>${t.industries.map(i => html`<th scope="col">${i}</th>`)}${t.final_columns.map(f => html`<th scope="col">${f}</th>`)}<th scope="col">supply = use</th></tr>`;
   const body = t.products.map((p, r) => html`<tr><th scope="row" class="row">${p}</th>${cells[r].map((v, c) =>

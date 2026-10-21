@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.26.1 — The Register: a redesign of the site and browser tools
+No change to the ledger, its rules, signed formats, stored state or verifiers (`verify.js`, `safe.js`, `wallet.js` and `ledger3d.js` are byte-identical to 0.26.0).
+- One visual system across the explainer, explorer, dashboard and wallet: ledger paper, iron-gall ink, an oxblood seal and one verified green; Libre Caslon with Public Sans, self-hosted in `site/fonts/` (SIL Open Font License); dark mode as the same book under a reading lamp; chart categories as tokens, so they read correctly in both modes.
+- Explainer: a live deed as the first screen (`site/hero.js`). Two fresh Ed25519 keys sign the SHA-256 fingerprint of a contract in the browser; every edit re-verifies, marks the changed fingerprint characters, strikes the signatures and cracks the seal. Without Ed25519 support the page says it is only comparing fingerprints.
+- The ten steps are numbered paragraphs with a margin *Proof* citation naming the command that checks each claim, and a real ordered list of steps under the hero. One navigation bar, identical on every page.
+- Motion: spring presses and the seal written as CSS `linear()` curves; reduced motion keeps every state change visible without movement.
+- Accessibility: 0 problems under axe-core 4.14 (14 label-in-name violations that 4.14 newly reports on 0.26.0 are fixed, plus one dashboard heatmap contrast issue in dark mode). Phone header no longer cuts off the navigation.
+- README: overview, key features, screenshots and a GIF of the live deed, setup and usage, project structure, and a Design section.
+
 ## 0.26.0 — security remediation of the v0.25.0 audit
 An external audit of v0.25.0 reported 4 critical and 18 high-priority findings. Every finding its summary describes was reproduced, turned into a regression test and fixed; `tools/audit_repro.py` shows all 15 code-level reproductions VULNERABLE on v0.25.0 and SAFE now, and the two browser findings are reproduced in Chromium. Full register with statuses, files, tests and remaining risk: `docs/SECURITY_FINDINGS.md`. Decision: **not production-ready**.
 - **F01** strict transaction parsing and a fault boundary around every validator message; bounded mempool, future-height buffer and client frame size.

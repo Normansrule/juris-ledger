@@ -1,56 +1,80 @@
 <p align="center"><img src="assets/banner.svg" alt="JurisLedger" width="100%"></p>
 
 <p align="center">
-  <a href="https://normansrule.github.io/juris-ledger/"><b>▶ Open the interactive explainer</b></a> — ten animated, step-by-step simulations you can drive yourself
-  &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/explorer.html"><b>Explore a whole ledger</b></a>
-  &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/dashboard.html"><b>Dashboard</b></a>
-  &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/wallet.html"><b>Wallet</b></a>
-  &nbsp;·&nbsp; <a href="#quick-start">Quick start</a> &nbsp;·&nbsp; <a href="#who-can-attack-it-and-how-far-they-get">Threats</a> &nbsp;·&nbsp; <a href="docs/GOVERNMENT.md">Public-sector blueprint</a>
+  <a href="https://normansrule.github.io/juris-ledger/"><b>Open the interactive explainer</b></a>
+  &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/explorer.html">Explorer</a>
+  &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/dashboard.html">Dashboard</a>
+  &nbsp;·&nbsp; <a href="https://normansrule.github.io/juris-ledger/wallet.html">Wallet</a>
+  &nbsp;·&nbsp; <a href="#setup-and-usage">Setup</a> &nbsp;·&nbsp; <a href="#who-can-attack-it-and-how-far-they-get">Threats</a> &nbsp;·&nbsp; <a href="docs/GOVERNMENT.md">Public-sector blueprint</a>
 </p>
 
 # JurisLedger
 
 **Signed legal contracts and verifiable public accounts on a ledger nobody owns.** *Juris* is Latin for "of law", as in jurisprudence.
 
-> **Status: research prototype, version 0.26.0. Not production-ready.** An external security audit of v0.25.0 reported 4 critical and 18 high-priority findings. Every one we could reproduce is fixed and has a regression test; others are blocked on evidence we do not have. Read [SECURITY.md](SECURITY.md) and [the findings register](docs/SECURITY_FINDINGS.md) before using this for anything but study. Do not put real money, real personal data or real legal evidence on it.
+JurisLedger is a research framework, in Python with a browser front end, for a permissioned ledger that keeps working when up to a third of its validators lie (Byzantine fault tolerance, BFT). It records signed contracts and purpose-tagged payments, then lets anyone replay the whole history: a court can check one contract offline from an evidence file, a statistics office can compute Gross Domestic Product (GDP) as a plain sum, and a fraud analyst can trace money moving in circles. It's built for researchers, students, and the curious people in law, economics and public administration who want to poke at that idea with running code instead of slides. Every feature ships with an attack that tries to break it, and the results, good and bad, are part of the project.
 
-### Start here (five minutes)
+> **Status: research prototype, version 0.26.1. Not production-ready.** An external security audit of v0.25.0 reported 4 critical and 18 high-priority findings. Every one we could reproduce is fixed and has a regression test; others are blocked on evidence we do not have. Passing tests does not mean there are no vulnerabilities. Read [SECURITY.md](SECURITY.md) and [the findings register](docs/SECURITY_FINDINGS.md) before using this for anything but study, and don't put real money, real personal data or real legal evidence on it.
+
+## Key features
+
+- **Contracts you can prove.** A contract's text stays off the ledger; its SHA-256 fingerprint, parties, signatures and every recorded view live on it. An *evidence file* verifies offline with nothing but the validators' public keys, in Python or in your browser, and the two verifiers are tested to agree.
+- **Finality on a hostile network.** Two-phase voting with locks (the Tendermint family) runs as separate validator processes over Transport Layer Security (TLS) 1.3. A durable signing journal stops a restarted validator from signing twice.
+- **National accounts as a by-product.** Payments carry validated purpose tags, so GDP by expenditure, production and income, plus supply-and-use tables, come out as sums that must agree.
+- **Fraud: prevented or flagged.** Forgery, replay and back-dating are impossible by protocol; round-tripping rings, structuring, Benford anomalies and double-pledged receivables are flagged for a human.
+- **Confidential payments.** Hidden amounts as Pedersen commitments with range proofs, so nobody can pay a negative amount, and statistics can still add up the totals.
+- **Identity without one registrar.** Accounts are verified by *k* independent issuers; lost keys are recovered by issuers after a waiting period the real owner can veto.
+- **Disputes with a short leash.** The arbitrator named in a contract can only reduce, postpone or waive what is in dispute. Never increase a debt, never move money.
+- **Four browser tools, no build step.** An explainer, a ledger explorer with a 3D view, a statistics dashboard and an offline-signing wallet. Strict Content Security Policy (CSP), untrusted data rendered as text and labelled unverified, and 0 problems on the Web Content Accessibility Guidelines (WCAG) 2.1 AA audit.
+- **Every claim is a check.** `jurisledger all` runs thirteen experiments and prints 127 claims as PASS or FAIL.
+
+## Screenshots
+
+<p align="center"><img src="docs/screenshots/deed.gif" alt="The explainer's live deed: two parties sign a supply agreement; changing 2,000 to 2 breaks both signatures and cracks the seal; putting the original back restores them" width="560"></p>
+<p align="center"><em>The first thing on the site: a real signed contract. Change one word and both Ed25519 signatures stop verifying, in your browser.</em></p>
+
+| | |
+|---|---|
+| ![The explainer: a ledger that nobody owns, and anybody can check](docs/screenshots/explainer.png) | ![The same deed after one word was changed: signatures struck through, seal cracked](docs/screenshots/explainer-tampered.png) |
+| **Explainer.** The claim, a live deed, and ten numbered steps through the life of one transaction. | **Tampered.** Every changed character of the fingerprint is marked; both signatures fail. |
+| ![The explainer in dark mode](docs/screenshots/explainer-dark.png) | ![The explorer: re-checking a whole ledger in the browser](docs/screenshots/explorer.png) |
+| **Dark mode** is the same register under a reading lamp, on every page. | **Explorer.** Drop a `chain.json` and every block is re-verified in your browser. |
+| ![The dashboard in dark mode: activity, spending and GDP block by block](docs/screenshots/dashboard.png) | ![The wallet: create a key and sign offline](docs/screenshots/wallet.png) |
+| **Dashboard.** Activity, spending mix, GDP and consensus health, live or from a sample. | **Wallet.** Make a key, sign a payment, carry the file to any validator. |
+
+<p align="center"><img src="docs/screenshots/explainer-phone.png" alt="The explainer on a phone" width="300"></p>
+
+## Setup and usage
+
+You need Python 3.10 or newer. It's tested on Ubuntu, including Windows Subsystem for Linux 2 (WSL 2). The only runtime dependency is [`cryptography`](https://cryptography.io).
 
 ```bash
 git clone https://github.com/Normansrule/juris-ledger.git && cd juris-ledger
-python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
-jurisledger demo --out demo && jurisledger audit demo/chain.json   # build a sample ledger, then re-verify it
-jurisledger all                                                     # run every experiment; each claim prints PASS or FAIL
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
-Then open [the explainer](https://normansrule.github.io/juris-ledger/) to watch the same ideas animated, or read [Quick start](#quick-start) for the rest.
-
-JurisLedger is a research framework with working code. It asks one question and answers it with running software instead of slogans:
-
-> *If contracts and payments were recorded on a ledger that no single institution controls, could agreements become harder to forge and easier to prove, could fraud become harder to hide, and could a country measure its own economy more truthfully — without handing anyone a new kind of central power?*
-
-## Ten things you can watch happen
-
-The [explainer site](https://normansrule.github.io/juris-ledger/) (one self-contained page, also in [`site/index.html`](site/index.html)) walks the life of a single transaction. Each step is interactive and maps to one experiment in this repository:
-
-| Step | What you do on the page | The experiment that proves it |
-|---|---|---|
-| 1. A payment becomes final | Step a payment from Ana's phone through gossip, proposal, prevote, precommit, to a stamped seal | `jurisledger integration` |
-| 2. The network is attacked | Run the same delaying attack against single-phase and two-phase voting; watch one fork and one hold | `jurisledger asynchrony` |
-| 3. A contract is sealed | Edit the words of a signed agreement and watch the fingerprint and signatures react | `jurisledger contracts` |
-| 4. Who is anyone | Collect attestations from independent issuers, one of them corrupt; vote it out | `jurisledger identity` |
-| 5. Hidden amounts, honest books | Decompose an amount into 32 bit-commitments; try to pay a negative number | `jurisledger confidential` |
-| 6. The economy, measured | Move purchases into cash and see exactly what the ledger stops seeing | `jurisledger gdp` |
-| 7. Fraud, found | Inject a round-tripping ring and run the detector | `jurisledger fraud` |
-| 8. Settle a dispute | Move time forward, pay or miss rent, open a dispute, issue an award — and try to make the arbitrator double the debt or touch rent nobody disputed | `jurisledger disputes` |
-| 9. Prove it to a court | Drop a real evidence file and verify every signature, certificate and Merkle path in the browser; then try four ways to cheat | `jurisledger verify`, `tests/test_site_verifier.py` |
-| 10. Lock the text away | A restricted contract encrypted in the page with a key split 3-of-5 among custodians; record a receipt and read it, take custodians offline, make one lie, steal the file, let two collude, replace a custodian without rebuilding the key | `jurisledger vault`, `tests/test_vault.py` |
-
-Everything claimed in this README is backed by an experiment you can run in about half a minute:
+Then, in about five minutes:
 
 ```bash
-python -m jurisledger all
+jurisledger demo --out demo        # build a sample ledger; open demo/register.html in a browser
+jurisledger audit demo/chain.json --genesis demo/genesis.json   # re-verify everything against a founding record you trust
+jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json   # check one contract offline
+jurisledger all                    # run all thirteen experiments; each claim prints PASS or FAIL
 ```
+
+A few more once you're comfortable:
+
+```bash
+jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
+jurisledger cluster --out cluster  # four validator processes over TCP: pay, kill one, restart it, watch it catch up
+jurisledger fuzz --runs 50 --steps 500   # random attacks, eight invariants checked after every transaction
+python -m pytest -q                # the full suite; every printed claim is also asserted
+```
+
+To use the browser tools locally, open `site/index.html` (or `explorer.html`, `dashboard.html`, `wallet.html`) straight from disk; nothing is fetched from the internet. Running validators on separate machines is covered in [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+Here's what `jurisledger all` looks like:
 
 ```text
 === Obligations, compliance and court-ready evidence files ===
@@ -61,13 +85,41 @@ python -m jurisledger all
 === Consensus on a hostile network: single-phase versus two-phase voting ===
   [PASS] single-phase voting FORKS under a partition, with zero dishonest validators
   [PASS] two-phase voting with locks, same adversary: all four validators finalise the same block
-=== Confidential payments with range proofs on the real ledger ===
-  [PASS] a negative hidden amount (money printing) is rejected
   ...
 ALL CHECKS PASSED          (127 claims)
 ```
 
-> **Status:** research prototype, version 0.26.0. It is a laboratory, not a payment system. The [limitations](#what-this-does-not-solve) section and [SECURITY.md](SECURITY.md) are part of the result, not fine print.
+### Who uses which tool
+
+| You are | You run | You get |
+|---|---|---|
+| Anyone who pays | the [wallet](https://normansrule.github.io/juris-ledger/wallet.html), then `jurisledger submit` | A key made and kept in the browser, a payment signed with nothing sent anywhere, and a signed file you carry to any validator. Signatures are byte-identical to the Python ones |
+| A clerk, journalist or citizen | `register.html` from `jurisledger demo` | A browsable public register: contracts and who opened them, obligations, national accounts, review flags, and a *Verify* button on every contract. One self-contained file |
+| Anyone with a ledger export | the [explorer](https://normansrule.github.io/juris-ledger/explorer.html) | Every block's links, Merkle root, signatures and certificate checked in the browser; transactions in plain sentences, one account followed across blocks, GDP up to any block, the fraud detectors, and a 3D view of the chain and of money flows |
+| A lawyer, arbitrator or auditor | `jurisledger verify evidence.json validators.json`, or step 9 of the explainer | A plain-language verdict on one contract, checked offline against validator keys *you* supply. Exit code 0 or 1, so it scripts |
+| A statistics office | `jurisledger index`, `query`, `metrics`, `api`, and the [dashboard](https://normansrule.github.io/juris-ledger/dashboard.html) | An incremental SQLite index, a rate-limited read-only JSON (JavaScript Object Notation) application programming interface (API), and a dashboard with the supply-and-use table and a what-if of how demand ripples through the economy. See [`docs/DATA.md`](docs/DATA.md) |
+| An operator | `jurisledger init`, `jurisledger node …`, `jurisledger status HOST:PORT` | One validator process per machine; `jurisledger cluster` shows the whole choreography on one machine first |
+
+## Ten things you can watch happen
+
+The [explainer](https://normansrule.github.io/juris-ledger/) (also in [`site/index.html`](site/index.html)) walks the life of a single transaction. Each step maps to one experiment in this repository:
+
+| Step | What you do on the page | The experiment that proves it |
+|---|---|---|
+| 1. A payment becomes final | Step a payment from Ana's phone through gossip, proposal, prevote, precommit, to a stamped seal | `jurisledger integration` |
+| 2. The network is attacked | Run the same delaying attack against single-phase and two-phase voting; watch one fork and one hold | `jurisledger asynchrony` |
+| 3. A contract is sealed | Edit the words of a signed agreement and watch the fingerprint and signatures react | `jurisledger contracts` |
+| 4. Who is anyone | Collect attestations from independent issuers, one of them corrupt; vote it out | `jurisledger identity` |
+| 5. Hidden amounts, honest books | Decompose an amount into 32 bit-commitments; try to pay a negative number | `jurisledger confidential` |
+| 6. The economy, measured | Move purchases into cash and see exactly what the ledger stops seeing | `jurisledger gdp` |
+| 7. Fraud, found | Inject a round-tripping ring and run the detector | `jurisledger fraud` |
+| 8. Settle a dispute | Move time forward, pay or miss rent, open a dispute, issue an award, and try to make the arbitrator double the debt | `jurisledger disputes` |
+| 9. Prove it to a court | Drop a real evidence file and verify every signature, certificate and Merkle path in the browser; then try four ways to cheat | `jurisledger verify`, `tests/test_site_verifier.py` |
+| 10. Lock the text away | A restricted contract encrypted with a key split 3-of-5 among custodians; take custodians offline, make one lie, let two collude | `jurisledger vault`, `tests/test_vault.py` |
+
+The question behind all of it:
+
+> *If contracts and payments were recorded on a ledger that no single institution controls, could agreements become harder to forge and easier to prove, could fraud become harder to hide, and could a country measure its own economy more truthfully, without handing anyone a new kind of central power?*
 
 ---
 
@@ -138,41 +190,6 @@ In plain words:
 | Publishing sector totals from few firms leaks who paid what | Small-cell suppression and differential privacy on released statistics (experimental; noisy at small scale) | `jurisledger/stats.py` | `python -m jurisledger privacy` |
 
 ---
-
-## Quick start
-
-Tested on Ubuntu (including Windows Subsystem for Linux 2) with Python 3.10 or newer.
-
-```bash
-git clone https://github.com/Normansrule/juris-ledger.git
-cd juris-ledger
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-jurisledger demo --out demo        # builds a sample ledger; then open demo/register.html in a browser
-jurisledger audit demo/chain.json  # re-verify the whole ledger; prints the founding record's fingerprint
-jurisledger audit demo/chain.json --genesis demo/genesis.json   # ...and checks it against one you trust
-jurisledger verify demo/evidence-cold-storage-lease.json demo/validators.json
-jurisledger snapshot demo/chain.json -o snap.json && jurisledger audit snap.json   # join or audit from a certified snapshot
-jurisledger cluster --out cluster  # four validator PROCESSES over TCP: pay, kill one, restart it, watch it catch up
-jurisledger all                    # run all thirteen experiments (127 claims)
-python -m pytest                   # the full suite; every printed claim is also asserted
-```
-
-The only runtime dependency is [`cryptography`](https://cryptography.io) for Ed25519 signatures.
-
-### Three tools for three kinds of people
-
-| You are | You run | You get |
-|---|---|---|
-| Anyone who pays | open the [wallet](https://normansrule.github.io/juris-ledger/wallet.html), then `jurisledger submit` | Create or open a key in the browser, write a payment, sign it with nothing sent anywhere; carry the signed file to any validator. Signatures byte-identical to the Python ones; sealed key files open on both sides |
-| A clerk, journalist or citizen | open `register.html` | A browsable public register in the site's visual style: contracts and who opened them, obligations and their status, national accounts, review flags, validators — and a *Verify* button on every contract that checks it in the browser. One self-contained file, no server, nothing fetched from the internet |
-| Anyone with a ledger export | open the [explorer](https://normansrule.github.io/juris-ledger/explorer.html) and drop `chain.json` | Every block's links, Merkle root, signatures and certificate checked in the browser as the chain animates in; blocks, transactions in plain sentences, one account followed across blocks, GDP up to any block, the four fraud detectors with ring diagrams, and a **3D view**: the chain as a tower of blocks with validators orbiting it, and money flowing between every account |
-| A lawyer, arbitrator or auditor | `jurisledger verify evidence.json validators.json`, or drop the file on the explainer's step 8 — nothing is uploaded | A plain-language verdict on one contract — who signed, what was paid and when, what the arbitrator decided — checked offline against validator keys *you* supply. Exit code 0 or 1, so it scripts |
-| A person paying or being paid | `jurisledger wallet new / register / balance / pay HOST:PORT` | A command-line wallet: amounts in ordinary units, nonce fetched from the node, waits for finality, plain-language errors |
-| A statistics office or dashboard | `jurisledger index`, `query`, `metrics`, `api`; the [dashboard](https://normansrule.github.io/juris-ledger/dashboard.html) | A SQLite index built incrementally from verified blocks: GDP for any block range in a fraction of a millisecond, account histories, contract timelines, a per-block time series; a rate-limited read-only JSON API that can follow a live validator; and a dashboard of activity, spending mix, GDP, consensus health, the supply and use table as a heatmap, and a what-if of how demand ripples through the economy. See [`docs/DATA.md`](docs/DATA.md) |
-| An operator | `jurisledger init`, `jurisledger node …`, `jurisledger status HOST:PORT`, `jurisledger snapshot` | One validator process per machine, listening on a port, storing blocks on disk; `jurisledger cluster` shows the whole choreography on one machine first |
-| A statistics office, regulator or rival validator | `jurisledger audit chain.json` | The entire ledger replayed from its founding record: every signature, Merkle root, state digest and commit certificate |
 
 ## How it works
 
@@ -369,55 +386,78 @@ Stated plainly, because a framework that hides its gaps is a sales brochure.
 
 ---
 
-## Repository layout
+## Project structure
 
 ```text
-jurisledger/
-  crypto.py        canonical JSON, SHA-256, Ed25519, Merkle tree with inclusion proofs
-  tx.py            signed transactions
-  block.py         headers, blocks, the vote message
-  state.py         the state machine: every validation rule lives here
-  chain.py         block validation, commit certificates, full audit, light-client proofs
-  consensus.py     validator nodes, simulated network, Byzantine behaviours
-  bft.py           hostile-network laboratory: single-phase versus two-phase (Tendermint-style) voting
-  ledgernet.py     the real chain on signed two-phase consensus; block sync; equivocation evidence
-  net.py           validators as processes: TLS transport with key pinning, peer challenge, client, catch-up
-  cluster.py       launches N node processes locally and exercises them (pay, kill, rejoin)
-  wallet.py        command-line wallet against a running validator
-  deploy.py        multi-machine deployment files (genesis, peers, per-machine key folders)
-  vault.py         threshold-encrypted contract vault: AES-256-GCM text, Shamir k-of-n key with Feldman
-                   commitments, receipt-gated custodians, proactive re-sharing to new custodians
-  keystore.py      key files sealed with a passphrase (scrypt + AES-256-GCM)
-  accounts.py      supply and use tables, value added by industry, Leontief inverse in exact arithmetic
-  index.py         incremental SQLite index: queries and per-block metrics
-  api.py           read-only, rate-limited JSON API over the index; can follow a live validator
-  fuzz.py          invariant fuzzing: random attacks, eight properties checked after every transaction
-  doctor.py        `jurisledger doctor`: checks the machine's Python, packages, Node and key-file permissions
-site/index.html    the interactive explainer (deployed to GitHub Pages by .github/workflows/pages.yml)
-site/explorer.html browser ledger explorer: structural audit, blocks, transactions, accounts, GDP
-site/verify.js     evidence verifier, ledger audit, GDP and fraud detectors in JavaScript (WebCrypto), tested against the Python ones
-site/style.css     the shared visual system
-site/ledger3d.js   dependency-free 3D views of the chain and of money flows
-site/dashboard.html operations and statistics dashboard (live API, metrics.csv, or sample)
-site/wallet.html   browser wallet: keys, offline signing, sealed key files (site/wallet.js)
-assets/banner.svg  animated README banner
-  contracts.py     wallet helpers, contract vault, audit trail, provenance tree
-  legal.py         obligations, compliance, dispute records, offline-verifiable evidence files
-  stats.py         GDP three ways, differentially private release
-  fraud.py         four detectors
-  ec.py            Ed25519 point arithmetic for commitments
-  privacy.py       Pedersen commitments and bit-decomposition range proofs
-  storage.py       durable append-only block store; re-audits on open; survives torn writes;
-                   prunes to a certified snapshot with a gzip archive; exclusive lock per store
-  dashboard.py     the self-contained browsable public register
-  demo.py          sample ledger + evidence file + register, for first contact
-  bench.py         honest performance numbers
-  sim.py           synthetic economy with independent ground truth
-  experiments.py   the thirteen experiments; every claim is a checked boolean
-tests/             189 tests
-docs/              legal, architecture, threat model, economics, experiments log, references, roadmap
-examples/          quickstart.py
+juris-ledger/
+├── jurisledger/          the Python package
+│   ├── crypto.py         canonical JSON, SHA-256, Ed25519, Merkle tree with inclusion proofs
+│   ├── tx.py             signed transactions, strict parsing
+│   ├── block.py          headers, blocks, the vote message
+│   ├── state.py          the state machine: every validation rule lives here
+│   ├── chain.py          block validation, commit certificates, full audit, snapshots, light-client proofs
+│   ├── consensus.py      validator nodes, simulated network, Byzantine behaviours, mempool
+│   ├── bft.py            hostile-network laboratory: single-phase versus two-phase voting
+│   ├── ledgernet.py      the real chain on signed two-phase consensus; block sync; equivocation evidence
+│   ├── signguard.py      durable signing journal: a validator never signs twice
+│   ├── net.py            validators as processes: TLS 1.3 transport with key pinning, peer challenge, catch-up
+│   ├── cluster.py        launches N node processes locally and exercises them (pay, kill, rejoin)
+│   ├── storage.py        durable append-only block store, anchors, pruning to a certified snapshot
+│   ├── contracts.py      wallet helpers, contract vault, audit trail, provenance tree
+│   ├── legal.py          obligations, compliance, disputes, offline-verifiable evidence files
+│   ├── vault.py          threshold-encrypted contract vault (AES-256-GCM, Shamir k-of-n with Feldman commitments)
+│   ├── keystore.py       key files sealed with a passphrase (scrypt + AES-256-GCM)
+│   ├── privacy.py, ec.py Pedersen commitments, range proofs, Ed25519 point arithmetic
+│   ├── stats.py          GDP three ways, differentially private release
+│   ├── accounts.py       supply-and-use tables, value added by industry, Leontief inverse
+│   ├── fraud.py          four fraud detectors
+│   ├── index.py, api.py  incremental SQLite index and the read-only JSON API
+│   ├── wallet.py         command-line wallet against a running validator
+│   ├── deploy.py         `jurisledger init`: genesis, peers, per-machine key folders
+│   ├── dashboard.py      the self-contained public register
+│   ├── demo.py           sample ledger, evidence file and register for first contact
+│   ├── sim.py            synthetic economy with independent ground truth
+│   ├── experiments.py    the thirteen experiments; every claim is a checked boolean
+│   ├── fuzz.py           invariant fuzzing
+│   └── bench.py, doctor.py   honest performance numbers; environment checks
+├── site/                 the browser tools (deployed to GitHub Pages by .github/workflows/pages.yml)
+│   ├── index.html        the interactive explainer
+│   ├── explorer.html     ledger explorer, with ledger3d.js for the 3D views
+│   ├── dashboard.html    statistics and operations dashboard
+│   ├── wallet.html       browser wallet (wallet.js)
+│   ├── hero.js           the explainer's live deed (SHA-256 and Ed25519 through Web Crypto)
+│   ├── verify.js         evidence verifier, ledger audit, GDP and fraud detectors in JavaScript
+│   ├── safe.js           the escaping template every dynamic page fragment goes through
+│   ├── style.css         the shared visual system: tokens, type, motion (see Design, below)
+│   └── fonts/            Libre Caslon and Public Sans, self-hosted, with their licence (OFL.txt)
+├── tools/                audit_repro.py, csp.py, a11y_audit.py, manifest.py
+├── tests/                the test suite; vectors/canonical.json is the Python and JavaScript contract
+├── docs/                 security findings, threat model, architecture, legal, economics, experiments, screenshots
+├── assets/banner.svg     the animated README banner
+└── examples/quickstart.py
 ```
+
+## Design
+
+The site and the browser tools share one visual system, **The Register**: the court's bound record book. The project's strongest claim is that anybody can check the record, so the pages are designed to feel like a certified folio you could hand to a judge, not like a trading terminal or a crypto dashboard.
+
+**Colour: paper, ink and two stamps.** Warm ledger paper (`#EFE9DC`), iron-gall ink (`#1C1B19`), an oxblood seal (`#7A1F2B`) and one verified green (`#1F5E4A`). Oxblood is the brand mark and anything that breaks; green only ever means "this checks out"; amber only ever means "pending". Dark mode is the same book under a reading lamp: umber paper and parchment ink, not an inverted palette. Chart categories have their own tokens, so the dashboard and explorer read correctly in both modes.
+
+**Type: law-report serif, public-service sans.** Libre Caslon (the face of printed law reports) for headings and figures, Public Sans (the United States government's open typeface) for reading and interface, monospace only for hashes and commands. Both are self-hosted, so no page talks to a font service. Numbers use tabular figures.
+
+**Layout: a folio with margins.** Each of the ten steps is a numbered paragraph (¶ 1 to ¶ 10). The paragraph mark sits in the left margin, the claim and the interactive "stage" sit in the text column, and the right margin carries a *Proof* citation: the command in this repository that checks the same claim. Surfaces are separated by a step in paper tone instead of boxes and hairlines.
+
+**Motion: ink and press.** Signatures draw on as a pen stroke, and the seal presses with a short spring (a damped-spring curve written as CSS `linear()`, so it runs on the compositor). Buttons give a 140-millisecond press. Nothing a reader repeats often is animated. With `prefers-reduced-motion`, nothing travels: signatures appear already written and the seal fades in already pressed, but colour still changes so you can see what happened.
+
+**The hero moment.** The first screen is a real two-party contract. The page signs its SHA-256 fingerprint with two fresh Ed25519 keys through the browser's Web Crypto interface. Every keystroke re-hashes and re-verifies, the changed hex characters are marked, the signatures are struck through, and the seal cracks. One button puts the original back. If a browser has no Ed25519, the page says so and compares fingerprints only, instead of claiming a check it did not do.
+
+**Principles we hold to.**
+- No decoration standing in for content: no gradients, glass, glows, icon-card grids or stock illustrations.
+- States are designed: an empty explorer says what to open, loading shows real progress, and errors name the problem in plain words.
+- Untrusted data is always rendered as text and labelled unverified. Pages run under a hash-based Content Security Policy (CSP).
+- Accessibility is a gate, not a goal. The axe-core audit against the Web Content Accessibility Guidelines (WCAG) 2.1 A and AA, in light and dark, must report 0 problems (see [`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md)). Every control is reachable by keyboard and has a visible focus ring.
+
+All tokens (colour, type scale, spacing, easing, durations) sit at the top of [`site/style.css`](site/style.css), so a change of direction happens in one place.
 
 ## Documentation
 

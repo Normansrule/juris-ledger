@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-99EzCEIGr9WpTpBjoGJJKu7LLZFyyFpPo2uOkS8SJRc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wAZmlS+zSgR4u4/MB4sSijRKa481z035eZaIeND8QhI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>JurisLedger — how a public ledger for contracts and accounts works</title>
@@ -11,12 +11,7 @@
 <body>
 <header class="top"><div class="wrap">
   <a class="brand" href="#top">JurisLedger</a>
-  <nav class="folios" aria-label="Steps">
-    <a href="explorer.html"><strong>Explore a ledger</strong></a>
-    <a href="wallet.html">Wallet</a><a href="dashboard.html"><strong>Dashboard</strong></a>
-    <a href="#final">1 A payment becomes final</a><a href="#attack">2 The network is attacked</a><a href="#contract">3 A contract is sealed</a>
-    <a href="#identity">4 Who is anyone</a><a href="#hidden">5 Hidden amounts</a><a href="#gdp">6 The economy, measured</a><a href="#fraud">7 Fraud, found</a><a href="#dispute">8 Settle a dispute</a><a href="#evidence">9 Prove it</a><a href="#vault">10 Lock it away</a>
-  </nav>
+  <nav class="folios" aria-label="Site"><a href="index.html" aria-current="page">How it works</a><a href="explorer.html">Explore a ledger</a><a href="dashboard.html">Dashboard</a><a href="wallet.html">Wallet</a><a href="https://github.com/Normansrule/juris-ledger">Code</a></nav>
 </div></header>
 
 <main id="top" class="wrap">
@@ -24,15 +19,38 @@
   <div>
     <h1>A ledger that <em>nobody owns</em>, and anybody can check.</h1>
     <p class="lead">Contracts signed with keys, payments tagged with what they were for, and a record that a court, a statistics office or a rival bank can replay from the first block. This page walks the life of one transaction. Every step is something you can run.</p>
-    <div class="cta"><a class="btn" href="#final">Start with a payment</a><a class="btn ghost" href="explorer.html">Explore a whole ledger</a><a class="btn ghost" href="https://github.com/Normansrule/juris-ledger">Read the code</a></div>
+    <div class="cta"><a class="btn" href="#final">Start with a payment</a><a class="btn ghost" href="explorer.html">Explore a whole ledger</a><a class="btn link" href="https://github.com/Normansrule/juris-ledger">Read the code</a></div>
+    <p class="cite" id="deedMethod" style="max-width:46ch;margin-top:var(--s-6)"></p>
   </div>
-  <canvas id="heroCanvas" width="640" height="640" aria-label="Blocks being sealed by four validators" role="img"></canvas>
+  <figure class="deed" aria-labelledby="deedTitle">
+    <div class="deed-head"><h2 id="deedTitle">Supply agreement</h2><span>Folio 0412 · signed by both parties</span></div>
+    <label class="visually-hidden" for="deedText">The agreement. Change any word and watch the signatures.</label>
+    <textarea id="deedText" spellcheck="false" rows="4">The Mill delivers 2,000 kg of flour to The Bakery on the first day of every month, at 0.85 per kilogram, payable within 30 days.</textarea>
+    <p class="hint" id="deedHint">This is a real signed text. Change any word.</p>
+    <div class="deed-hash">Fingerprint (SHA-256) of the text above<code id="deedHash">…</code></div>
+    <div class="sigs">
+      <div class="sig"><svg viewBox="0 0 180 48" aria-hidden="true"><path class="ink" pathLength="1" d="M6 34C14 10 22 10 20 30S30 44 38 22 48 8 52 30C54 38 60 38 64 26L70 18C72 30 74 36 80 30 86 24 88 14 92 20 96 28 96 36 104 32 112 28 118 20 126 24 136 30 150 26 172 20"/><path class="strike" pathLength="1" d="M2 30L176 18"/></svg>
+        <span class="line"><span class="who">The Mill</span><span class="state">Waiting for the signature</span></span></div>
+      <div class="sig"><svg viewBox="0 0 180 48" aria-hidden="true"><path class="ink" pathLength="1" d="M8 12C10 24 10 36 12 42M12 14C26 8 34 18 22 26 34 26 38 38 16 40M44 36C40 26 52 22 54 30 56 38 50 40 60 34L66 24C66 32 70 40 78 32 86 26 82 16 90 22 98 30 92 40 104 34 114 28 112 14 120 22 128 32 124 44 136 36 146 28 156 24 174 26"/><path class="strike" pathLength="1" d="M4 34L176 20"/></svg>
+        <span class="line"><span class="who">The Bakery</span><span class="state">Waiting for the signature</span></span></div>
+    </div>
+    <svg class="seal" id="deedSeal" viewBox="0 0 100 100" aria-hidden="true"><title>Seal intact</title>
+      <defs><path id="sealRing" d="M50 50m-39 0a39 39 0 1 1 78 0a39 39 0 1 1-78 0"/></defs>
+      <circle cx="50" cy="50" r="48" fill="currentColor"/><circle cx="50" cy="50" r="31" fill="none" stroke="var(--sheet)" stroke-width="1"/>
+      <text><textPath href="#sealRing">JURISLEDGER · SEALED BY QUORUM ·</textPath></text>
+      <text class="mono" x="50" y="57" text-anchor="middle">JL</text>
+      <path class="crack" pathLength="1" d="M18 26L36 40 30 50 46 58 42 70 60 74 70 88"/></svg>
+    <div class="deed-foot"><p class="deed-status" id="deedStatus" role="status" aria-live="polite"></p><button class="btn ghost" id="deedReset" type="button" hidden>Put the original back</button></div>
+    <figcaption class="visually-hidden">A two-party agreement whose SHA-256 fingerprint is signed with Ed25519 in your browser, where the browser supports it.</figcaption>
+  </figure>
 </section>
+<nav class="toc" aria-label="Steps on this page"><ol><li><a href="#final">A payment becomes final</a></li><li><a href="#attack">The network is attacked</a></li><li><a href="#contract">A contract is sealed</a></li><li><a href="#identity">Who is anyone</a></li><li><a href="#hidden">Hidden amounts</a></li><li><a href="#gdp">The economy, measured</a></li><li><a href="#fraud">Fraud, found</a></li><li><a href="#dispute">Settle a dispute</a></li><li><a href="#evidence">Prove it to a court</a></li><li><a href="#vault">Lock the text away</a></li></ol></nav>
 
 <!-- 1 ------------------------------------------------------------------ -->
 <section class="folio" id="final">
   <div class="head"><div class="num">1</div><div><h2>A payment becomes final</h2>
-  <p>Ana pays the café. Nobody is in charge, so who decides it happened? Four validators do, together, and only when more than two thirds of them agree twice.</p></div></div>
+  <p>Ana pays the café. Nobody is in charge, so who decides it happened? Four validators do, together, and only when more than two thirds of them agree twice.</p></div>
+  <aside class="cite"><p><code>jurisledger integration</code> runs exactly this, with signed votes, on a simulated hostile network; <code>jurisledger cluster</code> runs it as four processes.</p></aside></div>
   <div class="stage">
     <div>
       <svg id="finalSvg" viewBox="0 0 560 380" aria-hidden="true">
@@ -48,7 +66,6 @@
       <div class="steps" id="finalSteps"></div>
       <div class="caption" id="finalCap"></div>
       <div class="controls"><button class="btn" id="finalNext">Next step</button><button class="btn ghost" id="finalPlay">Play all</button><button class="btn ghost" id="finalReset">Start over</button></div>
-      <p style="margin-top:1rem;font-size:.9rem">In the repository: <code>jurisledger integration</code> runs exactly this, with signed votes, on a simulated hostile network; <code>jurisledger cluster</code> runs it as four processes.</p>
     </div>
   </div>
 </section>
@@ -56,7 +73,8 @@
 <!-- 2 ------------------------------------------------------------------ -->
 <section class="folio" id="attack">
   <div class="head"><div class="num">2</div><div><h2>The network is attacked</h2>
-  <p>An attacker cannot forge a vote, so they do the one thing left: delay messages. One round of voting breaks. The second round, with a lock, holds. Watch both under the same attack.</p></div></div>
+  <p>An attacker cannot forge a vote, so they do the one thing left: delay messages. One round of voting breaks. The second round, with a lock, holds. Watch both under the same attack.</p></div>
+  <aside class="cite"><p><code>jurisledger asynchrony</code> runs this attack plus 1,000 random ones with a lying validator. Single-phase forks in some; two-phase never does.</p></aside></div>
   <div class="stage">
     <div>
       <svg id="attackSvg" viewBox="0 0 560 420" aria-hidden="true"></svg>
@@ -69,7 +87,6 @@
       <div class="steps" id="attackSteps"></div>
       <div class="caption" id="attackCap"></div>
       <div class="controls"><button class="btn" id="attackNext">Next step</button><button class="btn ghost" id="attackPlay">Play all</button><button class="btn ghost" id="attackReset">Start over</button></div>
-      <p style="margin-top:1rem;font-size:.9rem">In the repository: <code>jurisledger asynchrony</code> runs this attack plus 1,000 random ones with a lying validator. Single-phase forks in some; two-phase never does.</p>
     </div>
   </div>
 </section>
@@ -77,7 +94,8 @@
 <!-- 3 ------------------------------------------------------------------ -->
 <section class="folio" id="contract">
   <div class="head"><div class="num">3</div><div><h2>A contract is sealed</h2>
-  <p>The words stay off the ledger. What goes on it is a fingerprint of the words, and each party's signature over that exact fingerprint. Edit the text below and watch what happens to a signed agreement.</p></div></div>
+  <p>The words stay off the ledger. What goes on it is a fingerprint of the words, and each party's signature over that exact fingerprint. Edit the text below and watch what happens to a signed agreement.</p></div>
+  <aside class="cite"><p><code>jurisledger contracts</code> signs, supersedes and audits real contracts, and records every view as a signed receipt.</p></aside></div>
   <div class="stage">
     <div>
       <label for="prose"><strong>The agreement</strong> (edit freely)</label>
@@ -98,7 +116,8 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
 <!-- 4 ------------------------------------------------------------------ -->
 <section class="folio" id="identity">
   <div class="head"><div class="num">4</div><div><h2>Who is anyone</h2>
-  <p>No single registrar decides who exists. An account counts as verified when enough independent issuers have vouched for it. Press issuers to attest; one of them is corrupt.</p></div></div>
+  <p>No single registrar decides who exists. An account counts as verified when enough independent issuers have vouched for it. Press issuers to attest; one of them is corrupt.</p></div>
+  <aside class="cite"><p><code>jurisledger identity</code> registers twenty fake firms with one corrupt issuer's help; none of them can sign a contract. Validators then vote the corrupt issuer out and its attestations stop counting at once.</p></aside></div>
   <div class="stage">
     <div>
       <label>Attestations required: <strong id="kLabel">2</strong> of 4<input type="range" id="kRange" min="1" max="4" value="2"></label>
@@ -109,7 +128,6 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
     <div>
       <h3>What the account can do</h3>
       <ul id="idAbilities"></ul>
-      <p style="font-size:.9rem">In the repository: <code>jurisledger identity</code> registers twenty fake firms with one corrupt issuer's help; none of them can sign a contract. Validators then vote the corrupt issuer out and its attestations stop counting at once.</p>
     </div>
   </div>
 </section>
@@ -117,7 +135,8 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
 <!-- 5 ------------------------------------------------------------------ -->
 <section class="folio" id="hidden">
   <div class="head"><div class="num">5</div><div><h2>Hidden amounts, honest books</h2>
-  <p>A public ledger of every payment would be a surveillance machine. So the amount is hidden inside a commitment, and a proof shows it is a whole number of cents between 0 and 42,949,672.95 without saying which. Try to pay a negative amount.</p></div></div>
+  <p>A public ledger of every payment would be a surveillance machine. So the amount is hidden inside a commitment, and a proof shows it is a whole number of cents between 0 and 42,949,672.95 without saying which. Try to pay a negative amount.</p></div>
+  <aside class="cite"><p><code>jurisledger confidential</code> makes a real payment with two of these proofs and rejects money printing, overspending and replay. A proof is about 11 kB and takes a quarter of a second in pure Python.</p></aside></div>
   <div class="stage">
     <div>
       <label>Amount to hide (cents) <input type="number" id="hidAmt" value="123456" step="1"></label>
@@ -127,7 +146,6 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
     <div>
       <h3>Why 32 bits</h3>
       <p>The value is split into bits. Each bit gets its own commitment and a proof that it is 0 or 1 — nothing else. The 32 pieces add up to the original commitment. A negative number has no such decomposition, so the proof cannot be built, and the ledger refuses the payment.</p>
-      <p style="font-size:.9rem">In the repository: <code>jurisledger confidential</code> makes a real payment with two of these proofs and rejects money printing, overspending and replay. A proof is about 11 kB and takes a quarter of a second in pure Python.</p>
     </div>
   </div>
 </section>
@@ -135,7 +153,8 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
 <!-- 6 ------------------------------------------------------------------ -->
 <section class="folio" id="gdp">
   <div class="head"><div class="num">6</div><div><h2>The economy, measured</h2>
-  <p>Every payment says what it was for, and the ledger refuses tags that do not fit the accounts involved. Gross domestic product then stops being an estimate and becomes a sum. Drag the slider to see the one thing the ledger cannot see.</p></div></div>
+  <p>Every payment says what it was for, and the ledger refuses tags that do not fit the accounts involved. Gross domestic product then stops being an estimate and becomes a sum. Drag the slider to see the one thing the ledger cannot see.</p></div>
+  <aside class="cite"><p><code>jurisledger gdp</code> compares the ledger with the simulator's own books and with a stylised survey. Ledger error on what is on it: 0.0%.</p></aside></div>
   <div class="stage">
     <div>
       <div class="figs"><div><b id="gdpE">2,196,332.41</b>by expenditure</div><div><b id="gdpP">2,196,332.41</b>by production</div><div><b id="gdpI">2,196,332.41</b>by income</div></div>
@@ -145,12 +164,11 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
     </div>
     <div>
       <h3>How the tags become accounts</h3>
-      <svg viewBox="0 0 420 220" aria-hidden="true" style="font:12px var(--sans)">
+      <svg viewBox="0 0 440 220" aria-hidden="true" style="font:12px var(--sans)">
         <g fill="var(--ink)"><text x="10" y="30">FINAL_CONSUMPTION</text><text x="10" y="60">INVESTMENT</text><text x="10" y="90">GOVERNMENT_PURCHASE</text><text x="10" y="120">EXPORT</text><text x="10" y="150">to a non-resident</text><text x="10" y="180">INTERMEDIATE</text></g>
         <g class="flow" stroke-linecap="round"><path d="M170 26 C 250 26, 260 80, 320 80"/><path d="M170 56 C 250 56, 260 80, 320 80"/><path d="M170 86 C 250 86, 260 80, 320 80"/><path d="M170 116 C 250 116, 260 80, 320 80"/><path d="M170 146 C 250 146, 260 80, 320 80"/><path d="M170 176 C 250 176, 260 190, 320 190"/></g>
         <g fill="var(--ink)"><text x="330" y="84">C + I + G + X − M</text><text x="330" y="194">not in GDP</text></g>
       </svg>
-      <p style="font-size:.9rem">In the repository: <code>jurisledger gdp</code> compares the ledger with the simulator's own books and with a stylised survey. Ledger error on what is on it: 0.0%.</p>
     </div>
   </div>
 </section>
@@ -158,13 +176,13 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
 <!-- 7 ------------------------------------------------------------------ -->
 <section class="folio" id="fraud">
   <div class="head"><div class="num">7</div><div><h2>Fraud, found</h2>
-  <p>Some fraud the ledger makes impossible: forged payments, replays, back-dated contracts. Some it can only make visible. Round-tripping — passing the same money in a circle to inflate revenue — is the second kind. Inject one and run the detector.</p></div></div>
+  <p>Some fraud the ledger makes impossible: forged payments, replays, back-dated contracts. Some it can only make visible. Round-tripping — passing the same money in a circle to inflate revenue — is the second kind. Inject one and run the detector.</p></div>
+  <aside class="cite"><p><code>jurisledger fraud</code> injects four frauds — a ring, structuring under a reporting threshold, invented invoice amounts, and one receivable pledged to two banks — and reports its false positives on a clean economy too.</p></aside></div>
   <div class="stage">
     <div><svg id="fraudSvg" viewBox="0 0 560 360" aria-hidden="true"></svg></div>
     <div>
       <div class="controls" style="margin-top:0"><button class="btn" id="fraudInject">Inject a ring</button><button class="btn" id="fraudDetect" disabled>Run detector</button><button class="btn ghost" id="fraudReset">Clear</button></div>
       <div class="caption" id="fraudCap">Six firms trade normally. Nothing to see yet.</div>
-      <p style="font-size:.9rem">In the repository: <code>jurisledger fraud</code> injects four frauds — a ring, structuring under a reporting threshold, invented invoice amounts, and one receivable pledged to two banks — and reports its false positives on a clean economy too.</p>
     </div>
   </div>
 </section>
@@ -172,7 +190,8 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
 <!-- 8 ------------------------------------------------------------------ -->
 <section class="folio" id="dispute">
   <div class="head"><div class="num">8</div><div><h2>Settle a dispute</h2>
-  <p>A lease names three rent instalments and an arbitrator both parties chose. Move time forward, pay or don't, open a dispute, and decide it. The arbitrator's powers are a short list: reduce, postpone or waive what is in dispute. Try to make it do more.</p></div></div>
+  <p>A lease names three rent instalments and an arbitrator both parties chose. Move time forward, pay or don't, open a dispute, and decide it. The arbitrator's powers are a short list: reduce, postpone or waive what is in dispute. Try to make it do more.</p></div>
+  <aside class="cite"><p><code>jurisledger disputes</code> runs this with real signed transactions — thirteen claims, including that the award moved no money and that the claim, defence and award all appear in the offline-verifiable evidence file.</p></aside></div>
   <div class="stage" style="grid-template-columns:1fr">
     <div>
       <svg id="dispSvg" viewBox="0 0 900 250" aria-hidden="true" style="font:12px var(--sans)"></svg>
@@ -197,17 +216,17 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
         <div class="controls"><button class="btn" id="dDecide">Issue the award</button><button class="btn ghost" id="dCheat">Try to double the debt</button><button class="btn ghost" id="dCheat2">Try to award rent not in dispute</button></div>
       </div>
     </div>
-    <p style="font-size:.9rem;margin:0">In the repository: <code>jurisledger disputes</code> runs this with real signed transactions — thirteen claims, including that the award moved no money and that the claim, defence and award all appear in the offline-verifiable evidence file.</p>
   </div>
 </section>
 
 <!-- 9 ------------------------------------------------------------------ -->
 <section class="folio" id="evidence">
   <div class="head"><div class="num">9</div><div><h2>Prove it to a court</h2>
-  <p>An arbitrator receives one file about one contract. They check it here, in this browser: every signature, every validator certificate, every link to its block. The file never leaves their machine, and they do not have to trust whoever sent it — only the validators' public keys.</p></div></div>
+  <p>An arbitrator receives one file about one contract. They check it here, in this browser: every signature, every validator certificate, every link to its block. The file never leaves their machine, and they do not have to trust whoever sent it — only the validators' public keys.</p></div>
+  <aside class="cite"><p><code>jurisledger verify</code> runs the same checks on the command line; <code>tests/test_site_verifier.py</code> keeps this page and the Python verifier in agreement.</p></aside></div>
   <div class="stage">
     <div>
-      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose an evidence file">
+      <div class="drop" id="drop" tabindex="0" role="button">
         <strong>Drop an evidence file here</strong><br>or click to choose one — made by <code>jurisledger demo</code> or <code>legal.evidence_bundle</code>
         <input type="file" id="evFile" accept=".json,application/json" hidden>
       </div>
@@ -237,7 +256,8 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
 <!-- 10 ----------------------------------------------------------------- -->
 <section class="folio" id="vault">
   <div class="head"><div class="num">10</div><div><h2>Lock the text away from everyone</h2>
-  <p>A restricted contract's text is encrypted, and the key is split among five custodians so that any three can rebuild it and any two learn nothing. They release their pieces only to a reader whose VIEW is already on the ledger. Everything below is real cryptography running in this page: AES-256-GCM and Shamir secret sharing.</p></div></div>
+  <p>A restricted contract's text is encrypted, and the key is split among five custodians so that any three can rebuild it and any two learn nothing. They release their pieces only to a reader whose VIEW is already on the ledger. Everything below is real cryptography running in this page: AES-256-GCM and Shamir secret sharing.</p></div>
+  <aside class="cite"><p><code>jurisledger vault</code> checks sixteen claims, including that a custodian handing back a forged piece is caught by public commitments, that one receipt buys exactly one read, and that custodians can be replaced and the threshold changed without the key ever being rebuilt.</p></aside></div>
   <div class="stage" style="grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)">
     <div>
       <svg id="vSvg" viewBox="0 0 520 300" role="group" aria-label="Five custodians around a sealed contract; a reader on the right" style="font:12px var(--sans)"></svg>
@@ -255,7 +275,6 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
       <div class="verdict" id="vVerdict">Sealed</div>
       <pre class="tx" id="vText" style="background:var(--wash);border-radius:8px;padding:.7rem;font-size:.8rem;white-space:pre-wrap;word-break:break-all;min-height:6rem;margin:.4rem 0"></pre>
       <div class="caption" id="vCap"></div>
-      <p style="font-size:.9rem">In the repository: <code>jurisledger vault</code> checks sixteen claims, including that a custodian handing back a forged piece is caught by public commitments, that one receipt buys exactly one read, and that custodians can be replaced and the threshold changed without the key ever being rebuilt.</p>
     </div>
   </div>
 </section>
@@ -275,6 +294,7 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
 <script src="safe.js"></script>
 <script src="verify.js"></script>
 <script src="sample-evidence.js"></script>
+<script src="hero.js"></script>
 <script>
 const { html, raw } = window.JurisSafe;
 (() => {
@@ -284,50 +304,6 @@ const sleep = ms => new Promise(r => setTimeout(r, reduced ? 0 : ms));
 const svgNS = "http://www.w3.org/2000/svg";
 const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(svgNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
 const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++) { const b = document.createElement("i"); if (k <= i) b.classList.add("on"); box.appendChild(b); } };
-
-/* ---------- hero: one orchestrated sequence ---------- */
-(function hero() {
-  const c = $("#heroCanvas"), ctx = c.getContext("2d");
-  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-  const W = 640, cx = 320, cy = 320, R = 210;
-  const vals = [0, 1, 2, 3].map(i => ({ a: -Math.PI / 2 + i * Math.PI / 2 }));
-  let t0 = null, blocks = 0;
-  function frame(ts) {
-    if (!t0) t0 = ts; const t = reduced ? 9e9 : (ts - t0) / 1000;
-    ctx.clearRect(0, 0, W, W);
-    ctx.strokeStyle = css("--rule"); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
-    // chain of blocks in the centre
-    const n = Math.min(5, Math.floor(t / 1.6));
-    for (let i = 0; i < n; i++) {
-      const x = cx - 100 + i * 50, y = cy;
-      ctx.fillStyle = css("--sheet"); ctx.strokeStyle = css("--ink"); ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.roundRect(x - 20, y - 20, 40, 40, 6); ctx.fill(); ctx.stroke();
-      if (i) { ctx.beginPath(); ctx.moveTo(x - 30, y); ctx.lineTo(x - 20, y); ctx.stroke(); }
-    }
-    // validators and their votes flying to the newest block
-    const phase = (t % 1.6) / 1.6, target = cx - 100 + n * 50;
-    vals.forEach((v, i) => {
-      const x = cx + R * Math.cos(v.a), y = cy + R * Math.sin(v.a);
-      ctx.fillStyle = css("--sheet"); ctx.strokeStyle = css("--ink"); ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = css("--ink"); ctx.font = "12px " + css("--sans"); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("v" + i, x, y);
-      if (n < 5 && i !== 3) { // v3 is "slow": three of four is enough
-        const p = Math.min(1, phase * 1.4), ex = x + (target - x) * p, ey = y + (cy - y) * p;
-        ctx.fillStyle = p < 0.5 ? css("--amber") : css("--verified"); ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill();
-      }
-    });
-    if (n === 5) { // stamp the seal once
-      ctx.save(); ctx.translate(cx + 100, cy - 10); ctx.rotate(-0.2); ctx.strokeStyle = css("--seal"); ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, 23, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = css("--seal"); ctx.font = "9px " + css("--serif"); ctx.fillText("FINAL", 0, -4); ctx.font = "8px " + css("--sans"); ctx.fillText("3 of 4", 0, 7); ctx.restore();
-      ctx.fillStyle = css("--ink-2"); ctx.font = "13px " + css("--sans"); ctx.fillText("five blocks, each sealed by a quorum", cx, cy + 70);
-      return;
-    }
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-})();
 
 /* ---------- 1: finality stepper ---------- */
 (function finality() {
@@ -666,11 +642,13 @@ const stepsUI = (box, n, i) => { box.innerHTML = ""; for (let k = 0; k < n; k++)
     el("text", { x: 190, y: 278, "text-anchor": "middle", fill: "var(--ink-2)", "font-size": 10.5 }, svg).textContent = `${ct.length} bytes of ciphertext`;
     for (let i = 0; i < N; i++) {
       const [x, y] = pos(i), m = state.mode[i], col = m === "off" ? "var(--rule)" : m === "liar" ? "var(--seal)" : highlight.includes(i) ? "var(--amber)" : "var(--verified)";
-      const g = el("g", { tabindex: 0, role: "button", "aria-label": `${NAMES[i]}: ${m === "ok" ? "honest" : m === "off" ? "offline" : "lying"}. Activate to change.`, style: "cursor:pointer" }, svg);
+      // The accessible name starts with the visible text (name, then the label in the circle), so speech input can target it.
+      const shown = m === "off" ? "off" : m === "liar" ? "lies" : `x=${i + 1}`;
+      const g = el("g", { tabindex: 0, role: "button", "aria-label": `${NAMES[i]} ${shown}: ${m === "ok" ? "honest" : m === "off" ? "offline" : "lying"}. Activate to change.`, style: "cursor:pointer" }, svg);
       el("line", { x1: x, y1: y, x2: 190, y2: 205, stroke: "var(--rule)", "stroke-dasharray": "3 4" }, g);
+      el("text", { x, y: y - 27, "text-anchor": "middle", fill: "var(--ink-2)", "font-size": 10 }, g).textContent = NAMES[i] + " ";
       el("circle", { cx: x, cy: y, r: 20, fill: "var(--sheet)", stroke: col, "stroke-width": 3 }, g);
-      el("text", { x, y: y + 4, "text-anchor": "middle", fill: "var(--ink)", "font-size": 11, "font-weight": 600 }, g).textContent = m === "off" ? "off" : m === "liar" ? "lies" : `x=${i + 1}`;
-      el("text", { x, y: y - 27, "text-anchor": "middle", fill: "var(--ink-2)", "font-size": 10 }, g).textContent = NAMES[i];
+      el("text", { x, y: y + 4, "text-anchor": "middle", fill: "var(--ink)", "font-size": 11, "font-weight": 600 }, g).textContent = shown;
       const cycle = () => { state.mode[i] = { ok: "off", off: "liar", liar: "ok" }[m]; draw(); };
       g.addEventListener("click", cycle); g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cycle(); } });
     }

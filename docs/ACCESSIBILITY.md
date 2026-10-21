@@ -12,7 +12,9 @@ python tools/a11y_audit.py
 
 This loads the explainer, the explorer (with the demo ledger open), the dashboard, the wallet and a generated public register, in both light and dark colour schemes, and runs axe-core against every WCAG 2.1 A and AA rule it automates.
 
-**Result, re-run for 0.26.0 (after the security changes and the new phone-width rules): 0 problems on all ten page-and-scheme combinations.** The first run (0.20.0) found 36, all fixed:
+**Result, re-run for 0.26.1 (The Register redesign) with axe-core 4.14: 0 problems on all ten page-and-scheme combinations.** axe-core 4.14 newly reports 14 label-in-name violations on 0.26.0 (the two file drop zones and the vault custodians, whose accessible names did not contain their visible text, which breaks speech input) and the redesign briefly introduced one dark-mode contrast issue in the dashboard heatmap; all are fixed. The live deed on the explainer is keyboard-operable, announces its verdict through a polite live region, and keeps its state change visible with reduced motion.
+
+**Earlier result, 0.26.0 (after the security changes and the new phone-width rules): 0 problems on all ten page-and-scheme combinations.** The first run (0.20.0) found 36, all fixed:
 
 | found | fix |
 |---|---|
