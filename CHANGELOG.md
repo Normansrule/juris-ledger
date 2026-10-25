@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.26.4 — the network start-up test runs in any environment
+No change to the ledger, the site or any shipped code; one test changed.
+- `test_init_folders_start_a_working_network` failed whenever the test interpreter's environment was not activated: each validator's `start.sh` runs `jurisledger` from `PATH` and otherwise falls back to the system `python3`, which has no `jurisledger` installed, so no validator started. The test now puts the interpreter running the tests first on `PATH` for the validators it starts. The full suite passes with no failures.
+
+## 0.26.3 — one motion system across every tool
+No change to the ledger, its rules, signed formats, stored state or verifiers (`verify.js`, `safe.js`, `wallet.js` and `ledger3d.js` are byte-identical to 0.26.2).
+- Explorer, dashboard and wallet share the explainer's arrival: titles set word by word, and panels rise into place as you reach them.
+- Dashboard: the headline figures count up on a critically damped spring the first time they appear and land on the exact text (`site/motion.js`); live refreshes never animate.
+- Verdicts are stamped: a small seal presses in beside "Verified" in the explorer and wallet, and a rejected one lands as a cracked ring.
+- Reduced motion: none of it moves; every value and verdict appears at once.
+- An independent review pass found three issues, all fixed: the wallet's verdict never showed its stamp (the class sits on an inner element); panels hidden at load never rose when they appeared; very large figures could flash exponent notation mid-count.
+
+## 0.26.2 — The Register, bound: motion and a scroll-driven centrepiece
+No change to the ledger, its rules, signed formats, stored state or verifiers (`verify.js`, `safe.js`, `wallet.js` and `ledger3d.js` are byte-identical to 0.26.1).
+- Explainer: **the bound book** (`site/book.js`). Six folios chained by real SHA-256 fingerprints computed in the browser. On a wide screen the section pins while you scroll: the pile deals out into a chain, folio 2 is altered and the next link visibly breaks. Every folio has an Alter and Restore button; narrow screens, short screens and reduced motion get the same chain laid flat.
+- Arrival: the headline sets word by word, then the lead, actions and deed settle in. The deed tilts toward a fine pointer on a spring and lies flat while you type. Folios rise into place as you reach them (`site/reveal.js`). A reading-progress rule under the header uses CSS scroll timelines where supported. Entrances move position only, never opacity, so text keeps full contrast on every frame.
+- Reduced motion: no pinning, no tilt, no rise; every state change is still shown.
+- README: a GIF of the bound book, the new files in the structure, and the Design section updated.
+- An independent review pass found five issues in the bound book, all fixed: "Restore every folio" was undone by the scroll at once and lost focus; captions followed the scroll after a reader took over; a mouse click in the pile jumped the page; scrolling announced the status to screen readers; a resize did not refresh the position.
+
 ## 0.26.1 — The Register: a redesign of the site and browser tools
 No change to the ledger, its rules, signed formats, stored state or verifiers (`verify.js`, `safe.js`, `wallet.js` and `ledger3d.js` are byte-identical to 0.26.0).
 - One visual system across the explainer, explorer, dashboard and wallet: ledger paper, iron-gall ink, an oxblood seal and one verified green; Libre Caslon with Public Sans, self-hosted in `site/fonts/` (SIL Open Font License); dark mode as the same book under a reading lamp; chart categories as tokens, so they read correctly in both modes.

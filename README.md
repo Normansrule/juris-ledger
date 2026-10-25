@@ -14,7 +14,7 @@
 
 JurisLedger is a research framework, in Python with a browser front end, for a permissioned ledger that keeps working when up to a third of its validators lie (Byzantine fault tolerance, BFT). It records signed contracts and purpose-tagged payments, then lets anyone replay the whole history: a court can check one contract offline from an evidence file, a statistics office can compute Gross Domestic Product (GDP) as a plain sum, and a fraud analyst can trace money moving in circles. It's built for researchers, students, and the curious people in law, economics and public administration who want to poke at that idea with running code instead of slides. Every feature ships with an attack that tries to break it, and the results, good and bad, are part of the project.
 
-> **Status: research prototype, version 0.26.1. Not production-ready.** An external security audit of v0.25.0 reported 4 critical and 18 high-priority findings. Every one we could reproduce is fixed and has a regression test; others are blocked on evidence we do not have. Passing tests does not mean there are no vulnerabilities. Read [SECURITY.md](SECURITY.md) and [the findings register](docs/SECURITY_FINDINGS.md) before using this for anything but study, and don't put real money, real personal data or real legal evidence on it.
+> **Status: research prototype, version 0.26.4. Not production-ready.** An external security audit of v0.25.0 reported 4 critical and 18 high-priority findings. Every one we could reproduce is fixed and has a regression test; others are blocked on evidence we do not have. Passing tests does not mean there are no vulnerabilities. Read [SECURITY.md](SECURITY.md) and [the findings register](docs/SECURITY_FINDINGS.md) before using this for anything but study, and don't put real money, real personal data or real legal evidence on it.
 
 ## Key features
 
@@ -32,6 +32,9 @@ JurisLedger is a research framework, in Python with a browser front end, for a p
 
 <p align="center"><img src="docs/screenshots/deed.gif" alt="The explainer's live deed: two parties sign a supply agreement; changing 2,000 to 2 breaks both signatures and cracks the seal; putting the original back restores them" width="560"></p>
 <p align="center"><em>The first thing on the site: a real signed contract. Change one word and both Ed25519 signatures stop verifying, in your browser.</em></p>
+
+<p align="center"><img src="docs/screenshots/book.gif" alt="The bound book: six folios lie in a pile, deal out into a chain as you scroll, then folio 2's amount changes and folio 3's link to it breaks" width="720"></p>
+<p align="center"><em>Scroll on, and the deed becomes a ledger: six folios, each carrying the previous one's SHA-256 fingerprint. Alter any folio and the next link breaks.</em></p>
 
 | | |
 |---|---|
@@ -426,6 +429,9 @@ juris-ledger/
 │   ├── dashboard.html    statistics and operations dashboard
 │   ├── wallet.html       browser wallet (wallet.js)
 │   ├── hero.js           the explainer's live deed (SHA-256 and Ed25519 through Web Crypto)
+│   ├── book.js           the bound book: six folios chained by SHA-256, pinned to the scroll
+│   ├── reveal.js         folios and panels rise into place as they reach the reader
+│   ├── motion.js         the dashboard's figures count up on a spring the first time they appear
 │   ├── verify.js         evidence verifier, ledger audit, GDP and fraud detectors in JavaScript
 │   ├── safe.js           the escaping template every dynamic page fragment goes through
 │   ├── style.css         the shared visual system: tokens, type, motion (see Design, below)
@@ -447,12 +453,14 @@ The site and the browser tools share one visual system, **The Register**: the co
 
 **Layout: a folio with margins.** Each of the ten steps is a numbered paragraph (¶ 1 to ¶ 10). The paragraph mark sits in the left margin, the claim and the interactive "stage" sit in the text column, and the right margin carries a *Proof* citation: the command in this repository that checks the same claim. Surfaces are separated by a step in paper tone instead of boxes and hairlines.
 
-**Motion: ink and press.** Signatures draw on as a pen stroke, and the seal presses with a short spring (a damped-spring curve written as CSS `linear()`, so it runs on the compositor). Buttons give a 140-millisecond press. Nothing a reader repeats often is animated. With `prefers-reduced-motion`, nothing travels: signatures appear already written and the seal fades in already pressed, but colour still changes so you can see what happened.
+**Motion: ink, press and weight.** The headline sets word by word, each word rising out of its own line like type pressed into the page, and the deed settles in after it. Signatures draw on as a pen stroke, and the seal presses with a short spring (a damped-spring curve written as CSS `linear()`, so it runs on the compositor). On a mouse or trackpad the deed tilts toward the pointer on a real spring, like a sheet lifted off the desk, and lies flat while you type. Folios and panels rise into place as you reach them, and a thin oxblood rule under the header measures how far into the register you are. The same arrival runs on every tool: page titles set word by word, the dashboard's figures count up to their exact values the first time they appear (never on a live refresh), and a verdict is stamped: a small seal presses in beside "Verified", and a rejected one lands as a cracked ring. Every entrance moves position only, never opacity, so text keeps full contrast on every frame. Nothing a reader repeats often is animated. With `prefers-reduced-motion`, nothing travels: signatures appear already written, the seal fades in already pressed and the book lies flat, but colour still changes so you can see what happened.
 
 **The hero moment.** The first screen is a real two-party contract. The page signs its SHA-256 fingerprint with two fresh Ed25519 keys through the browser's Web Crypto interface. Every keystroke re-hashes and re-verifies, the changed hex characters are marked, the signatures are struck through, and the seal cracks. One button puts the original back. If a browser has no Ed25519, the page says so and compares fingerprints only, instead of claiming a check it did not do.
 
+**The bound book.** Scroll past the deed and it becomes a ledger. Six folios lie in a pile; as you scroll, the section pins under the header and deals them out into a chain, each folio showing the SHA-256 fingerprint of the one before it. Then folio 2's amount changes: its own fingerprint changes, the next folio's "previous" no longer matches, and the folios after it are marked as following a broken link. Any folio can be altered or restored by hand, which takes over from the scroll. The scroll drives a critically damped spring rather than the drawing directly, so a fast flick settles instead of jumping. On narrow or short screens, or with reduced motion, the same chain is laid flat and works the same way.
+
 **Principles we hold to.**
-- No decoration standing in for content: no gradients, glass, glows, icon-card grids or stock illustrations.
+- No decoration standing in for content: no gradients, glass, glows, icon-card grids or stock illustrations. Every moving thing on the explainer is computing something real (a signature, a fingerprint, a broken link).
 - States are designed: an empty explorer says what to open, loading shows real progress, and errors name the problem in plain words.
 - Untrusted data is always rendered as text and labelled unverified. Pages run under a hash-based Content Security Policy (CSP).
 - Accessibility is a gate, not a goal. The axe-core audit against the Web Content Accessibility Guidelines (WCAG) 2.1 A and AA, in light and dark, must report 0 problems (see [`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md)). Every control is reachable by keyboard and has a visible focus ring.

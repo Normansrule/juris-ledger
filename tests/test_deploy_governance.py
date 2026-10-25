@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -41,7 +43,10 @@ def test_init_folders_start_a_working_network(tmp_path):
     assert genesis["policy"]["min_attestations"] == 1 and len(genesis["issuers"]) == 1
     for i in range(4):
         assert not (tmp_path / f"validator-{i}" / f"validator-{(i + 1) % 4}.key.json").exists()  # no key leaks across folders
-    procs = [subprocess.Popen(["bash", str(tmp_path / f"validator-{i}" / "start.sh")],
+    # start.sh runs `jurisledger` from PATH (or falls back to python3).  Put the interpreter running the tests
+    # first on PATH, so the validators use the same installed package even when its environment is not activated.
+    env = dict(os.environ, PATH=os.path.dirname(sys.executable) + os.pathsep + os.environ.get("PATH", ""))
+    procs = [subprocess.Popen(["bash", str(tmp_path / f"validator-{i}" / "start.sh")], env=env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT) for i in range(4)]
     try:
         st = wait_height(Client("127.0.0.1", ports[0]), 2, 40)

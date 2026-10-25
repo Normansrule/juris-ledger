@@ -57,7 +57,7 @@ table.top td.n,table.top th.n{text-align:right}
 </div></header>
 
 <main class="wrap" style="padding-top:2.5rem;padding-bottom:4rem">
-  <h1 class="page-title">The economy and the network, block by block.</h1>
+  <h1 class="page-title"><span class="w"><span style="--i:0">The</span></span> <span class="w"><span style="--i:1">economy</span></span> <span class="w"><span style="--i:2">and</span></span> <span class="w"><span style="--i:3">the</span></span> <span class="w"><span style="--i:4">network,</span></span> <span class="w"><span style="--i:5">block</span></span> <span class="w"><span style="--i:6">by</span></span> <span class="w"><span style="--i:7">block.</span></span></h1>
   <p style="font-size:1.1rem;color:var(--ink-2);max-width:70ch">What a statistics office or a network operator watches: how much is happening, where the money goes, how gross domestic product (GDP) builds up, and whether the validators are keeping up. Fed by <code>jurisledger api</code>, by a <code>metrics.csv</code>, or by the bundled sample.</p>
 
   <div class="stage" style="grid-template-columns:1fr;margin-top:1.2rem">
@@ -72,7 +72,7 @@ table.top td.n,table.top th.n{text-align:right}
     <p class="caption trust" id="trust" role="note" style="min-height:0;margin:.2rem 0 0"></p>
   </div>
 
-  <div class="kpis" id="kpis"></div>
+  <div class="kpis" id="kpis" data-count-up></div>
 
   <div class="charts">
     <section class="chart"><h2>Activity</h2><p>Transactions per block (bars) and public payments (line).</p><canvas id="cTx" role="img" aria-label="chart"></canvas></section>
@@ -109,6 +109,8 @@ table.top td.n,table.top th.n{text-align:right}
 <footer><div class="wrap">JurisLedger is a research prototype under the MIT licence.</div></footer>
 <script src="safe.js"></script>
 <script src="sample-metrics.js"></script>
+<script src="reveal.js"></script>
+<script src="motion.js"></script>
 <script>
 (() => {
 const { html, num } = window.JurisSafe;

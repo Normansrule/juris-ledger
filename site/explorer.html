@@ -68,7 +68,7 @@ select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:va
 </div></header>
 
 <main class="wrap" style="padding-top:2.5rem">
-  <h1 class="page-title">Check a whole ledger, block by block.</h1>
+  <h1 class="page-title"><span class="w"><span style="--i:0">Check</span></span> <span class="w"><span style="--i:1">a</span></span> <span class="w"><span style="--i:2">whole</span></span> <span class="w"><span style="--i:3">ledger,</span></span> <span class="w"><span style="--i:4">block</span></span> <span class="w"><span style="--i:5">by</span></span> <span class="w"><span style="--i:6">block.</span></span></h1>
   <p class="lead" style="font-size:1.15rem;color:var(--ink-2);max-width:68ch">Open a ledger export and this page re-checks it here, in your browser: every link between blocks, every Merkle root, every transaction signature and every validator certificate. Nothing is uploaded. Then browse what the ledger records.</p>
 
   <div class="stage even" style="margin-top:1.5rem">
@@ -138,6 +138,7 @@ select{font:inherit;padding:.45rem;border:1px solid var(--rule);border-radius:va
 <script src="safe.js"></script>
 <script src="verify.js"></script>
 <script src="ledger3d.js"></script>
+<script src="reveal.js"></script>
 <script>
 (async () => {
 const $ = s => document.querySelector(s), V = window.JurisVerify;

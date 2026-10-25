@@ -36,7 +36,7 @@ pre.tx{background:var(--wash);border-radius:var(--radius);padding:.7rem;font-siz
   <nav class="folios" aria-label="Site"><a href="index.html">How it works</a><a href="explorer.html">Explore a ledger</a><a href="dashboard.html">Dashboard</a><a href="wallet.html" aria-current="page">Wallet</a><a href="https://github.com/Normansrule/juris-ledger">Code</a></nav>
 </div></header>
 <main class="wrap" style="padding-top:2.5rem;padding-bottom:4rem">
-  <h1 class="page-title">Sign in your browser. Carry it anywhere.</h1>
+  <h1 class="page-title"><span class="w"><span style="--i:0">Sign</span></span> <span class="w"><span style="--i:1">in</span></span> <span class="w"><span style="--i:2">your</span></span> <span class="w"><span style="--i:3">browser.</span></span> <span class="w"><span style="--i:4">Carry</span></span> <span class="w"><span style="--i:5">it</span></span> <span class="w"><span style="--i:6">anywhere.</span></span></h1>
   <p style="font-size:1.1rem;color:var(--ink-2);max-width:70ch">Your key is made and kept in this page by the browser's own cryptography. Nothing is uploaded: a signed transaction is a small file you hand to any validator, from any machine, even one that has never seen your key. That separation — signing offline, submitting online — is how high-value systems keep keys away from networks.</p>
 
   <div class="steps3">
@@ -86,6 +86,7 @@ pre.tx{background:var(--wash);border-radius:var(--radius);padding:.7rem;font-siz
 <script src="safe.js"></script>
 <script src="verify.js"></script>
 <script src="wallet.js"></script>
+<script src="reveal.js"></script>
 <script>
 (async () => {
 const $ = s => document.querySelector(s), W = window.JurisWallet, V = window.JurisVerify;

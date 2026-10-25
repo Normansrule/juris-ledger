@@ -90,6 +90,30 @@
 
   text.addEventListener("input", check);
   reset.addEventListener("click", () => { text.value = original; check(); text.focus(); });
+  // On a fine pointer the deed tilts toward the cursor like a sheet lifted off the desk, on a slightly
+  // underdamped spring so it settles with a little give.  It lies flat again while someone is typing.
+  const deed = text.closest(".deed"), hero = deed && deed.closest(".hero");
+  if (hero && !reduced && matchMedia("(hover: hover) and (pointer: fine)").matches) {
+    let tx = 0, ty = 0, x = 0, y = 0, vx = 0, vy = 0, raf = 0, last = 0;
+    const lim = v => Math.max(-1, Math.min(1, v));
+    const loop = t => {
+      const dt = Math.min(0.032, (t - last) / 1000 || 0.016), k = 120, c = 15; last = t;
+      vx += (k * (tx - x) - c * vx) * dt; x += vx * dt;
+      vy += (k * (ty - y) - c * vy) * dt; y += vy * dt;
+      deed.style.setProperty("--tx", x.toFixed(4)); deed.style.setProperty("--ty", y.toFixed(4));
+      const still = Math.abs(tx - x) + Math.abs(ty - y) + Math.abs(vx) + Math.abs(vy) < 1e-3;
+      raf = still ? 0 : requestAnimationFrame(loop);
+    };
+    const go = () => { if (!raf) { last = performance.now(); raf = requestAnimationFrame(loop); } };
+    hero.addEventListener("pointermove", e => {
+      if (document.activeElement === text) return;
+      const r = deed.getBoundingClientRect();
+      tx = lim((e.clientX - (r.left + r.width / 2)) / r.width); ty = lim((e.clientY - (r.top + r.height / 2)) / r.height); go();
+    });
+    hero.addEventListener("pointerleave", () => { tx = ty = 0; go(); });
+    text.addEventListener("focus", () => { tx = ty = 0; go(); });
+  }
+
   status.textContent = "Signing the original…";
   sign().catch(() => { status.className = "deed-status bad"; status.textContent = "This browser cannot compute SHA-256 here (the page needs a secure context)."; });
 })();

@@ -17,7 +17,7 @@
 <main id="top" class="wrap">
 <section class="hero">
   <div>
-    <h1>A ledger that <em>nobody owns</em>, and anybody can check.</h1>
+    <h1><span class="w"><span style="--i:0">A</span></span> <span class="w"><span style="--i:1">ledger</span></span> <span class="w"><span style="--i:2">that</span></span> <em><span class="w"><span style="--i:3">nobody</span></span> <span class="w"><span style="--i:4">owns,</span></span></em> <span class="w"><span style="--i:5">and</span></span> <span class="w"><span style="--i:6">anybody</span></span> <span class="w"><span style="--i:7">can</span></span> <span class="w"><span style="--i:8">check.</span></span></h1>
     <p class="lead">Contracts signed with keys, payments tagged with what they were for, and a record that a court, a statistics office or a rival bank can replay from the first block. This page walks the life of one transaction. Every step is something you can run.</p>
     <div class="cta"><a class="btn" href="#final">Start with a payment</a><a class="btn ghost" href="explorer.html">Explore a whole ledger</a><a class="btn link" href="https://github.com/Normansrule/juris-ledger">Read the code</a></div>
     <p class="cite" id="deedMethod" style="max-width:46ch;margin-top:var(--s-6)"></p>
@@ -43,6 +43,66 @@
     <div class="deed-foot"><p class="deed-status" id="deedStatus" role="status" aria-live="polite"></p><button class="btn ghost" id="deedReset" type="button" hidden>Put the original back</button></div>
     <figcaption class="visually-hidden">A two-party agreement whose SHA-256 fingerprint is signed with Ed25519 in your browser, where the browser supports it.</figcaption>
   </figure>
+</section>
+<section class="book" id="book" aria-labelledby="bookTitle">
+  <div class="book-pin">
+    <div class="book-copy">
+      <p class="kicker">The bound book</p>
+      <h2 id="bookTitle">One page is a signature. A ledger is every page, <em>bound by fingerprints.</em></h2>
+      <ol class="book-steps">
+        <li class="on">Each folio records what happened and carries the fingerprint of the folio before it, so the pages can only be read in one order.</li>
+        <li>Change one figure on one folio and its own fingerprint changes. The quorum's seal on it no longer fits.</li>
+        <li>The next folio still points at the old fingerprint, so the break shows at once. Hiding it means rewriting every later folio and forging the quorum's seal on each.</li>
+      </ol>
+      <p class="book-status" id="bookStatus" aria-live="off" tabindex="-1"></p>
+      <button class="btn ghost" id="bookReset" type="button" hidden>Restore every folio</button>
+      <p class="cite" id="bookMethod">The fingerprints are real SHA-256, computed in your browser from each folio's number, the previous fingerprint and the entry.</p>
+    </div>
+    <ol class="pages" id="bookPages" aria-label="Six folios of a ledger">
+      <li class="page" data-alt="12,000.00">
+        <div class="pg-head"><span class="pg-n">Folio 1</span><span class="pg-seal" aria-hidden="true"></span></div>
+        <p class="pg-entry">The Mill pays The Farm <span class="amt">1,200.00</span> for wheat.</p>
+        <dl class="pg-hash"><dt>Previous</dt><dd class="prev">00000000</dd><dt>This page</dt><dd class="self">…</dd></dl>
+        <p class="pg-state">Sealed by quorum</p>
+        <button class="pg-alter" type="button">Alter folio 1</button>
+      </li>
+      <li class="page" data-alt="170.00">
+        <div class="pg-head"><span class="pg-n">Folio 2</span><span class="pg-seal" aria-hidden="true"></span></div>
+        <p class="pg-entry">The Bakery pays The Mill <span class="amt">1,700.00</span> for flour.</p>
+        <dl class="pg-hash"><dt>Previous</dt><dd class="prev">…</dd><dt>This page</dt><dd class="self">…</dd></dl>
+        <p class="pg-state">Sealed by quorum</p>
+        <button class="pg-alter" type="button">Alter folio 2</button>
+      </li>
+      <li class="page" data-alt="6,400.00">
+        <div class="pg-head"><span class="pg-n">Folio 3</span><span class="pg-seal" aria-hidden="true"></span></div>
+        <p class="pg-entry">The Café pays The Bakery <span class="amt">640.00</span> for bread.</p>
+        <dl class="pg-hash"><dt>Previous</dt><dd class="prev">…</dd><dt>This page</dt><dd class="self">…</dd></dl>
+        <p class="pg-state">Sealed by quorum</p>
+        <button class="pg-alter" type="button">Alter folio 3</button>
+      </li>
+      <li class="page" data-alt="8.50">
+        <div class="pg-head"><span class="pg-n">Folio 4</span><span class="pg-seal" aria-hidden="true"></span></div>
+        <p class="pg-entry">The city pays The Café <span class="amt">85.00</span> for school lunches.</p>
+        <dl class="pg-hash"><dt>Previous</dt><dd class="prev">…</dd><dt>This page</dt><dd class="self">…</dd></dl>
+        <p class="pg-state">Sealed by quorum</p>
+        <button class="pg-alter" type="button">Alter folio 4</button>
+      </li>
+      <li class="page" data-alt="31.00">
+        <div class="pg-head"><span class="pg-n">Folio 5</span><span class="pg-seal" aria-hidden="true"></span></div>
+        <p class="pg-entry">The Bakery pays Sam <span class="amt">310.00</span> in wages.</p>
+        <dl class="pg-hash"><dt>Previous</dt><dd class="prev">…</dd><dt>This page</dt><dd class="self">…</dd></dl>
+        <p class="pg-state">Sealed by quorum</p>
+        <button class="pg-alter" type="button">Alter folio 5</button>
+      </li>
+      <li class="page" data-alt="9.60">
+        <div class="pg-head"><span class="pg-n">Folio 6</span><span class="pg-seal" aria-hidden="true"></span></div>
+        <p class="pg-entry">The Farm pays the city <span class="amt">96.00</span> in tax.</p>
+        <dl class="pg-hash"><dt>Previous</dt><dd class="prev">…</dd><dt>This page</dt><dd class="self">…</dd></dl>
+        <p class="pg-state">Sealed by quorum</p>
+        <button class="pg-alter" type="button">Alter folio 6</button>
+      </li>
+    </ol>
+  </div>
 </section>
 <nav class="toc" aria-label="Steps on this page"><ol><li><a href="#final">A payment becomes final</a></li><li><a href="#attack">The network is attacked</a></li><li><a href="#contract">A contract is sealed</a></li><li><a href="#identity">Who is anyone</a></li><li><a href="#hidden">Hidden amounts</a></li><li><a href="#gdp">The economy, measured</a></li><li><a href="#fraud">Fraud, found</a></li><li><a href="#dispute">Settle a dispute</a></li><li><a href="#evidence">Prove it to a court</a></li><li><a href="#vault">Lock the text away</a></li></ol></nav>
 
@@ -295,6 +355,8 @@ The Mill delivers 2,000 kg of flour per month at 0.85 per kg. Payment within 30 
 <script src="verify.js"></script>
 <script src="sample-evidence.js"></script>
 <script src="hero.js"></script>
+<script src="book.js"></script>
+<script src="reveal.js"></script>
 <script>
 const { html, raw } = window.JurisSafe;
 (() => {
